@@ -2,6 +2,9 @@
 # Prerequisites
 *.d
 
+# idea XML
+.idea/*.xml
+
 # Compiled Object files
 *.slo
 *.lo

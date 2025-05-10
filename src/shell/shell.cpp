@@ -45,9 +45,9 @@ void Shell::run()
 
 )";
 
-    std::print("{}\n", ascii_art_name);
-    std::print("Welcome to ApheliOS!\n");
-    std::print("Type 'exit' to quit, and 'clear' to clear the screen.\n\n");
+    std::println("{}", ascii_art_name);
+    std::println("Welcome to ApheliOS!");
+    std::println("Type 'exit' to quit, and 'clear' to clear the screen.\n");
 
     while (!quit) {
         std::print("ApheliOS:~$ ");
@@ -72,15 +72,15 @@ void Shell::run()
         } else if (command_lower == "clear") {
             ShellUtils::clear_screen();
         } else if (command_lower == "initialize") {
-            std::print("Initialize command recognized.");
+            std::println("Initialize command recognized.");
         } else if (command_lower == "scheduler-test") {
-            std::print("Scheduler test command recognized.");
+            std::println("Scheduler test command recognized.");
         } else if (command_lower == "scheduler-stop") {
-            std::print("Scheduler stop command recognized.");
+            std::println("Scheduler stop command recognized.");
         } else if (command_lower == "report-util") {
-            std::print("Report utilization command recognized.");
+            std::println("Report utilization command recognized.");
         } else {
-            std::print("{}: command not found\n", command);
+            std::println("{}: command not found", command);
         }
     }
 }

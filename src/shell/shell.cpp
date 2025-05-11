@@ -21,7 +21,7 @@ void ShellUtils::clear_screen()
     SetConsoleCursorPosition(h_std_out, coord);
 }
 #else
-void ShellUtils::clear_screan() { std::cout << "\033[2J\033[1;1H"; }
+void ShellUtils::clear_screen() { std::cout << "\033[2J\033[1;1H"; }
 #endif
 
 

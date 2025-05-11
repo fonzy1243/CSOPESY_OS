@@ -4,6 +4,7 @@
 #include <print>
 #include <ranges>
 #include <string>
+#include <locale>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -45,9 +46,19 @@ void Shell::run()
 
 )";
 
+#ifdef _WIN32
+    HANDLE h_out = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD dwMode = 0;
+    GetConsoleMode(h_out, &dwMode);
+    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    SetConsoleMode(h_out, dwMode);
+    SetConsoleOutputCP(CP_UTF8);
+#else
+    std::locale::global(std::locale("en_US.UTF-8"));
+#endif
     std::println("{}", ascii_art_name);
-    std::println("Welcome to ApheliOS!");
-    std::println("Type 'exit' to quit, and 'clear' to clear the screen.\n");
+    std::println("\033[38;5;36mWelcome to ApheliOS!\033[0m");
+    std::println("\033[31mType 'exit' to quit, and 'clear' to clear the screen.\n\033[0m");
 
     while (!quit) {
         std::print("ApheliOS:~$ ");

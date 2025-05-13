@@ -10,6 +10,10 @@
 #include <Windows.h>
 #endif
 
+#include "../process/process.h"
+#include "../session/session.h"
+
+class Shell;
 
 namespace ShellUtils {
     void clear_screen();
@@ -35,9 +39,32 @@ namespace ShellUtils {
 
 class Shell {
 public:
+    std::vector<std::shared_ptr<Session>> sessions;
+    std::shared_ptr<Session> current_session;
+    std::shared_ptr<ProcessGroup> current_process_group;
+    std::shared_ptr<Process> shell_process = std::make_shared<Process>(0, "pst");
+
+    std::string last_console_output;
+
+    bool exit_to_main_menu{false};
+
+    Shell();
+
     void run();
 
+    void create_screen(const std::string &name);
+    void switch_screen(const std::string &name);
+    void exit_screen();
+
 private:
+    std::deque<std::shared_ptr<Process>> ready_queue;
+    uint16_t current_pid{0};
+    uint16_t current_sid{0};
+
+
+    void create_session(const std::string &session_name, bool has_leader = false);
+    void switch_session(const std::string &session_name);
+
 };
 
 #endif //SHELL_H

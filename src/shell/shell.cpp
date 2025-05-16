@@ -54,6 +54,12 @@ std::string ShellUtils::convert_attributes_to_ansi(WORD attributes, WORD &curren
     }
     ansi_sequence += std::format("\033[{}m", bg_ansi);
 
+    // Convert simple cyan to specific ANSI code
+    if ((attributes & (FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY)) ==
+    (FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY)) {
+        return "\033[38;5;36m";
+    }
+
     current_screen_attributes = attributes;
     return ansi_sequence;
 }

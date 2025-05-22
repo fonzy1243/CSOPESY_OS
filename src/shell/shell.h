@@ -10,6 +10,8 @@
 #include <Windows.h>
 #endif
 
+#include <ftxui/component/screen_interactive.hpp>
+
 #include "../process/process.h"
 #include "../session/session.h"
 
@@ -32,9 +34,11 @@ namespace ShellUtils {
              .JMML.
 
 )";
-    void print_header();
+    void print_header(std::vector<std::string>& output_buffer);
+    void process_command(Shell& shell, const std::string& input, bool is_init_shell);
     extern std::function<void(Shell&, bool)> shell_loop;
     void handle_screen_cmd(Shell& shell, std::string input, bool is_initial_shell);
+    void display_smi(Shell& shell);
 };
 
 class Shell {
@@ -44,9 +48,12 @@ public:
     std::shared_ptr<ProcessGroup> current_process_group;
     std::shared_ptr<Process> shell_process = std::make_shared<Process>(0, "pst");
 
-    std::string last_console_output;
+    std::vector<std::string> last_console_output;
+    std::vector<std::string> output_buffer;
+    ftxui::ScreenInteractive screen = ftxui::ScreenInteractive::Fullscreen();
 
     bool exit_to_main_menu{false};
+    bool quit{false};
 
     Shell();
 

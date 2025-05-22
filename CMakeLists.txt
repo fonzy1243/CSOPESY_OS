@@ -16,3 +16,21 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(CSOPESY_OS PRIVATE -std=c++23)
     target_link_libraries(CSOPESY_OS PRIVATE "-lstdc++exp")
 endif ()
+
+if (WIN32)
+    add_compile_definitions(NOMINMAX)
+endif ()
+
+include(FetchContent)
+FetchContent_Declare(ftxui
+        GIT_REPOSITORY https://github.com/ArthurSonzogni/ftxui
+        GIT_TAG v6.1.9
+)
+FetchContent_MakeAvailable(ftxui)
+
+target_link_libraries(CSOPESY_OS PRIVATE
+        # Chose a submodule
+        ftxui::component
+        ftxui::dom
+        ftxui::screen
+)

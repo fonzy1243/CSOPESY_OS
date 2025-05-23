@@ -34,7 +34,7 @@ namespace ShellUtils {
              .JMML.
 
 )";
-    void print_header(std::vector<std::string>& output_buffer);
+    void print_header(std::deque<std::string>& output_buffer);
     void process_command(Shell& shell, const std::string& input, bool is_init_shell);
     extern std::function<void(Shell&, bool)> shell_loop;
     void handle_screen_cmd(Shell& shell, std::string input, bool is_initial_shell);
@@ -48,8 +48,8 @@ public:
     std::shared_ptr<ProcessGroup> current_process_group;
     std::shared_ptr<Process> shell_process = std::make_shared<Process>(0, "pst");
 
-    std::vector<std::string> last_console_output;
-    std::vector<std::string> output_buffer;
+    std::deque<std::string> last_console_output;
+    std::deque<std::string> output_buffer;
     ftxui::ScreenInteractive screen = ftxui::ScreenInteractive::Fullscreen();
 
     bool exit_to_main_menu{false};

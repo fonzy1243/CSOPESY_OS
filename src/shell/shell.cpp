@@ -169,7 +169,7 @@ std::string ShellUtils::get_console_output()
     return final_result_string;
 }
 
-void ShellUtils::print_header(std::vector<std::string>& output_buffer)
+void ShellUtils::print_header(std::deque<std::string>& output_buffer)
 {
     output_buffer.push_back(std::string(ascii_art_name));
     output_buffer.push_back("Welcome to ApheliOS!");
@@ -199,16 +199,20 @@ void ShellUtils::process_command(Shell &shell, const std::string &input, bool is
         if (is_initial_shell) {
             shell.quit = true;
         } else {
-            shell.exit_to_main_menu = true;
-            shell.quit = false;
-
-            shell.output_buffer.clear();
-
-            for (auto line : shell.last_console_output) {
-                shell.output_buffer.push_back(line);
+            //save current
+            if (shell.current_session) {
+                shell.current_session->output_buffer = shell.output_buffer;
             }
-            shell.output_buffer.push_back("[screen is terminating]");
+
+            shell.output_buffer.push_back("[screen is terminating]");//append
+
+            if (shell.current_session) { //save
+                shell.current_session->output_buffer = shell.output_buffer;
+            }
+
             shell.exit_screen();
+            shell.quit = false;
+            shell.exit_to_main_menu = true;
             return;
         }
     }
@@ -416,8 +420,8 @@ void ShellUtils::handle_screen_cmd(Shell& shell, std::string input, bool is_init
     // FOR NOW
     assert(args.size() == 2);
 
-    if (is_initial_shell) {
-        shell.last_console_output = shell.output_buffer;
+    if (shell.current_session) {
+    shell.current_session->output_buffer = shell.output_buffer;
     }
 
     if (args[0] == "-S") {
@@ -441,23 +445,42 @@ void Shell::run()
 
 void Shell::create_screen(const std::string &name)
 {
+
+    if (current_session) {
+        current_session->output_buffer = output_buffer; // save
+    }
+
     output_buffer.clear();
     create_session(name);
+    output_buffer = current_session->output_buffer; // restore
+
     current_process_group->processes[0]->run([this] {
-        output_buffer.push_back(std::format("Process name: {}", current_process_group->processes[0]->name));
-        std::string timestamp = std::format("{:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime);
-        output_buffer.push_back(std::format("Current time: {}", timestamp));
+        if (output_buffer.empty()) {
+            output_buffer.push_back(std::format("Process name: {}", current_process_group->processes[0]->name));
+            output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
+            output_buffer.push_back(std::format("Line info: {}/{}", output_buffer.size(), output_buffer.size()));
+        }
+        
+        current_session->output_buffer = output_buffer; // make sure saved again after run
     });
 }
 
 void Shell::switch_screen(const std::string &name)
 {
+    if (current_session) {
+        current_session->output_buffer = output_buffer; //save
+    }
+
     output_buffer.clear();
     switch_session(name);
+    output_buffer = current_session->output_buffer; //restore
+
     current_session->process_groups[0].processes[0]->run([this]() {
-        output_buffer.push_back(std::format("Process name: {}", current_process_group->processes[0]->name));
-        std::string timestamp = std::format("{:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime);
-        output_buffer.push_back(std::format("Current time: {}", timestamp));
+        if (output_buffer.empty()) {
+            output_buffer.push_back(std::format("Process name: {}", current_process_group->processes[0]->name));
+            output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
+            output_buffer.push_back(std::format("Line info: {}/{}", output_buffer.size(), output_buffer.size()));
+        }
     });
 }
 
@@ -465,8 +488,13 @@ void Shell::exit_screen()
 {
     for (auto& session : sessions) {
         if (session->name == "pst") {
+            if (current_session && current_session->name != "pst") {
+                current_session->output_buffer = output_buffer;
+            }
+
             current_session = session;
             current_process_group = std::make_shared<ProcessGroup>(current_session->process_groups[0]);
+            output_buffer = current_session->output_buffer;
             break;
         }
     }

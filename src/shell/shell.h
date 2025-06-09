@@ -46,11 +46,12 @@ public:
     std::vector<std::shared_ptr<Session>> sessions;
     std::shared_ptr<Session> current_session;
     std::shared_ptr<ProcessGroup> current_process_group;
-    std::shared_ptr<Process> shell_process = std::make_shared<Process>(0, "pst");
+    std::shared_ptr<Process> shell_process = std::make_shared<Process>(0, "pts");
 
     std::deque<std::string> last_console_output;
     std::deque<std::string> output_buffer;
     ftxui::ScreenInteractive screen = ftxui::ScreenInteractive::Fullscreen();
+
 
     bool exit_to_main_menu{false};
     bool quit{false};

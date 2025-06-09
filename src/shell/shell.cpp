@@ -5,13 +5,25 @@
 #include <print>
 #include <ranges>
 #include <string>
-#include <locale>
-#include <assert.h>
+#include <cassert>
 #include <algorithm>
 #include <chrono>
+#include <memory>
+
+// FTXUI
+#include <ftxui/component/component.hpp>
+#include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/component/loop.hpp>
+#include <ftxui/dom/elements.hpp>
+#include <ftxui/dom/table.hpp>
+#include <ftxui/dom/node.hpp>
+#include <ftxui/screen/color.hpp>
+
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <locale>
 #endif
 
 #ifdef _WIN32
@@ -157,89 +169,242 @@ std::string ShellUtils::get_console_output()
     return final_result_string;
 }
 
-void ShellUtils::print_header()
+void ShellUtils::print_header(std::deque<std::string>& output_buffer)
 {
-    std::println("{}", ascii_art_name);
-    std::println("\033[38;5;36mWelcome to ApheliOS!\033[0m");
-    // std::println("\033[36mWelcome to ApheliOS!\033[0m");
-    std::println("\033[31mType 'exit' to quit, and 'clear' to clear the screen.\n\033[0m");
+    output_buffer.push_back(std::string(ascii_art_name));
+    output_buffer.push_back("Welcome to ApheliOS!");
+    output_buffer.push_back("Type 'exit' to quit, and 'clear' to clear the screen.");
 }
 
-std::function<void(Shell&, bool)> ShellUtils::shell_loop = [](Shell& shell, bool print_head = false) {
-    bool quit = false;
-    std::string input;
+void ShellUtils::process_command(Shell &shell, const std::string &input, bool is_initial_shell)
+{
     std::string command;
 
-    bool is_initial_shell = !shell.current_session || shell.current_session->name == "pst";
-
-    if (shell.exit_to_main_menu && !is_initial_shell) {
-        return;
+    if (const size_t start = input.find_first_not_of(" \t\n\r\f\v"); start == std::string::npos) {
+        command = "";
+    } else {
+        const size_t end = input.find_last_not_of(" \t\n\r\f\v");
+        command = input.substr(start, end - start + 1);
     }
 
-#ifdef _WIN32
-    HANDLE h_out = GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD dwMode = 0;
-    GetConsoleMode(h_out, &dwMode);
-    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    SetConsoleMode(h_out, dwMode);
-    SetConsoleOutputCP(CP_UTF8);
-#else
-    std::locale::global(std::locale("en_US.UTF-8"));
-#endif
-    if (print_head)
-        print_header();
 
-    while (!quit && !shell.exit_to_main_menu) {
-        std::print("ApheliOS:~$ ");
-        std::getline(std::cin, input);
+    // lowercase command if needed
+    // not sure if we'll be needing case-sensitive commands
+    std::string command_lower =
+            command |
+            std::ranges::views::transform([](unsigned char c) { return static_cast<char>(std::tolower(c)); }) |
+            std::ranges::to<std::string>();
 
-        if (const size_t start = input.find_first_not_of(" \t\n\r\f\v"); start == std::string::npos) {
-            command = "";
-        } else {
-            const size_t end = input.find_last_not_of(" \t\n\r\f\v");
-            command = input.substr(start, end - start + 1);
-        }
-
-        // lowercase command if needed
-        // not sure if we'll be needing case-sensitive commands
-        std::string command_lower =
-                command |
-                std::ranges::views::transform([](unsigned char c) { return static_cast<char>(std::tolower(c)); }) |
-                std::ranges::to<std::string>();
-
-        if (command_lower == "exit") {
-            if (is_initial_shell) {
-                quit = true;
-            } else {
-                shell.exit_to_main_menu = true;
-                quit = true;
-                clear_screen();
-                if (shell.last_console_output != "") {
-                    std::println("{}", shell.last_console_output);
-                    std::println("[screen is terminating]");
-                }
-                return;
-            }
-        }
-        if (command_lower == "clear") {
-            clear_screen();
-        } else if (command_lower == "initialize") {
-            std::println("Initialize command recognized.");
-        } else if (command_lower.contains("screen")) {
-            handle_screen_cmd(shell, command, is_initial_shell);
-        } else if (command_lower == "scheduler-test") {
-            std::println("Scheduler test command recognized.");
-        } else if (command_lower == "scheduler-stop") {
-            std::println("Scheduler stop command recognized.");
-        } else if (command_lower == "report-util") {
-            std::println("Report utilization command recognized.");
-        } else {
-            std::println("{}: command not found", command);
-        }
-
+    if (command_lower == "exit") {
         if (is_initial_shell) {
-            shell.exit_to_main_menu = false;
+            shell.quit = true;
+        } else {
+            //save current
+            if (shell.current_session) {
+                shell.current_session->output_buffer = shell.output_buffer;
+            }
+
+            shell.output_buffer.push_back("[screen is terminating]");//append
+
+            if (shell.current_session) { //save
+                shell.current_session->output_buffer = shell.output_buffer;
+            }
+
+            shell.exit_screen();
+            shell.quit = false;
+            shell.exit_to_main_menu = true;
+            return;
         }
+    }
+    if (command_lower == "clear") {
+        clear_screen();
+        shell.output_buffer.clear();
+    } else if (command_lower == "initialize") {
+        shell.output_buffer.push_back("Initialize command recognized.");
+    } else if (command_lower.contains("screen")) {
+        handle_screen_cmd(shell, command, is_initial_shell);
+    } else if (command_lower == "scheduler-test") {
+        shell.output_buffer.push_back("Scheduler test command recognized.");
+    } else if (command_lower == "scheduler-stop") {
+        shell.output_buffer.push_back("Scheduler stop command recognized.");
+    } else if (command_lower == "report-util") {
+        shell.output_buffer.push_back("Report utilization command recognized.");
+    } else if (command_lower == "smi") {
+        display_smi(shell);
+    } else if (command_lower != "exit") {
+        shell.output_buffer.push_back(std::format("{}: command not found", command));
+    }
+
+    if (is_initial_shell) {
+        shell.exit_to_main_menu = false;
+    }
+}
+
+void ShellUtils::display_smi(Shell &shell)
+{
+   using namespace ftxui;
+    // GPU Top Bar Info (above the table)
+    auto gpu_top_info = hbox({
+        text("NVIDIA-SMI 551.86") | center,
+        filler(),
+        text("Driver Version: 551.86") | flex | center,
+        filler(),
+        text("CUDA Version: 12.9") | center,
+    });
+
+    auto cell = [](const char* t) {
+        auto style = [](Element e) {
+            return e | flex | size(WIDTH, GREATER_THAN, 6) | size(HEIGHT, EQUAL, 1);
+
+        };
+        return text(t) | style;
+    };
+
+    auto empty_cell = []() {
+        auto style = [](Element e) {
+            return e | flex | center | size(WIDTH, GREATER_THAN, 10) | size(HEIGHT, EQUAL, 1);
+        };
+        return text("") | style;
+    };
+
+    auto gpu_info_header = hbox({
+        gridbox({
+            { cell("GPU"), cell("Name") | center, empty_cell(), empty_cell(), cell("Driver-Model") | center },
+            { cell("Fan"), cell("Temp") | center, cell("Perf") | center, empty_cell(), cell("Pwr:Usage/Cap") | center }
+        }) | size(WIDTH, EQUAL, 46),
+       separatorDashed() ,
+        gridbox({
+            {cell("Bus-Id"), cell("Disp.A") | align_right},
+           {empty_cell(), cell("Memory-Usage") | align_right},
+        }) | center | size(WIDTH, EQUAL, 27),
+        separatorDashed(),
+        vbox({
+            text("Volatile Uncorr. ECC") | align_right,
+            hbox({
+                 cell("GPU-Util"), filler(), cell("Compute M.") | align_right,
+            }),
+            text("MIG M.") | align_right,
+        }) | center | size(WIDTH, EQUAL, 21),
+    });
+
+    auto gpu_info = hbox({
+        gridbox({
+            { hbox({cell("0"), cell("NVIDIA GeForce GTX 1080 Ti") | center, filler(), cell("WDDM") }) | flex_grow, },
+            { hbox({cell("22%"), cell("54C") | center, separatorEmpty(), separatorEmpty(), separatorEmpty(), cell("P0") | center, filler(), cell("68W"), cell("/"),cell("275W")   }) | flex_grow, },
+        }) | size(WIDTH, EQUAL, 46),
+        separatorDashed(),
+        gridbox({
+                {cell("00000000:01:00.0"), cell("   On") | align_right},
+               {text("3134MiB /  "), text("11264MiB") | align_right},
+            }) | center | size(WIDTH, EQUAL, 27),
+        separatorDashed(),
+        vbox({
+            text("N/A") | align_right,
+            hbox({
+                 cell("3%"), filler(), cell("Default") | align_right,
+            }),
+            text("N/A") | align_right,
+        }) | align_right | size(WIDTH, EQUAL, 21),
+    });
+
+    // Process Table
+    Table process_table = Table({
+        {"Processes:"},
+      { "GPU", "GI","CI", "      ", "PID", "Type", "Process name", "GPU Memory" },
+        {"", "ID", "ID", "      ", "", "", "", "Usage"},
+      { "0", "N/A","N/A", "      ", "11368", "C+G", "C:\\Windows\\System32\\dwm.exe", "N/A" },
+      { "0", "N/A","N/A", "      ","2116", "C+G", "C:\\w...bXboxGameBarWidgets.exe", "N/A" },
+      { "0", "N/A","N/A", "      ","5224", "C+G", "C:\\x123.0.2202.56\\msedgewebview2.exe", "N/A" },
+      { "0", "N/A","N/A", "      ","6640", "C+G", "C:\\Windows\\explorer.exe", "N/A" },
+      { "0", "N/A","N/A", "      ","6676", "C+G", "C:\\...SearchHost.exe", "N/A" },
+      { "0", "N/A","N/A", "      ","6700", "C+G", "C:\\ztyeny\\StartMenuExperienceHost.exe", "N/A" },
+    });
+
+    process_table.SelectAll().Border(EMPTY);
+    process_table.SelectRow(2).SeparatorVertical(EMPTY);
+    process_table.SelectRow(2).BorderBottom(BorderStyle::DOUBLE);
+
+    auto gpu_info_table = vbox({
+        gpu_top_info, separatorDashed(), gpu_info_header, separatorHeavy(), gpu_info
+    }) | borderDashed | size(WIDTH, EQUAL, 95);
+
+    auto gpu_process_table = vbox({
+        process_table.Render() | center | flex_grow
+    }) | borderDashed | size(WIDTH, EQUAL, 95) | size(HEIGHT, GREATER_THAN, 20);
+
+    auto smi = vbox({gpu_info_table, gpu_process_table});
+
+    auto screen = Screen::Create(Dimension::Full(), Dimension::Fit(smi));
+    Render(screen, smi);
+
+    std::string smi_output = screen.ToString();
+    shell.output_buffer.push_back(smi_output);
+}
+
+
+
+std::function<void(Shell&, bool)> ShellUtils::shell_loop = [](Shell& shell, bool print_head = false) {
+    using namespace ftxui;
+
+    std::string input;
+    const std::string prompt_text = "ApheliOS:~$ ";
+
+    auto input_option = InputOption();
+    input_option.on_enter = [&] {
+        shell.output_buffer.push_back(prompt_text + input);
+
+        bool is_initial_shell = !shell.current_session || shell.current_session->name == "pst";
+        process_command(shell, input, is_initial_shell);
+
+        input.clear();
+
+        if (shell.quit) {
+            shell.screen.Exit();
+        }
+
+        shell.screen.RequestAnimationFrame();
+    };
+    input_option.transform = [](InputState state) {
+        if (state.focused || state.hovered) {
+            state.element |= bgcolor(Color::RGBA(0, 0, 0, 0));
+        }
+        return state.element;
+    };
+
+    Component input_field = Input(&input, input_option);
+
+    if (print_head && shell.output_buffer.empty()) {
+        print_header(shell.output_buffer);
+    }
+
+    auto render_output = [&] {
+        std::vector<Element> elements;
+
+        for (const auto& line : shell.output_buffer) {
+            elements.push_back(paragraph(line) | color(Color::Default));
+        }
+
+        return vbox(elements);
+    };
+
+    auto prompt = text(prompt_text) | color(Color::Default);
+
+    auto layout = Container::Vertical({input_field});
+
+    auto renderer = Renderer(layout, [&] {
+        return vbox({
+            vbox(render_output() | flex),
+            hbox({
+                text(prompt_text),
+                input_field->Render() | selectionForegroundColor(Color::Aquamarine1) | flex,
+            })
+        }) | yflex | yframe;
+    });
+
+    auto loop = Loop(&shell.screen, renderer);
+
+    while (!shell.quit) {
+        loop.RunOnce();
     }
 };
 
@@ -255,8 +420,8 @@ void ShellUtils::handle_screen_cmd(Shell& shell, std::string input, bool is_init
     // FOR NOW
     assert(args.size() == 2);
 
-    if (is_initial_shell) {
-        shell.last_console_output = get_console_output();
+    if (shell.current_session) {
+    shell.current_session->output_buffer = shell.output_buffer;
     }
 
     if (args[0] == "-S") {
@@ -275,39 +440,64 @@ void ShellUtils::handle_screen_cmd(Shell& shell, std::string input, bool is_init
 
 void Shell::run()
 {
-    shell_process->run(std::bind(ShellUtils::shell_loop, *this, true));
+    shell_process->run(std::bind(ShellUtils::shell_loop, std::ref(*this), true));
 }
 
 void Shell::create_screen(const std::string &name)
 {
-    ShellUtils::clear_screen();
+
+    if (current_session) {
+        current_session->output_buffer = output_buffer; // save
+    }
+
+    output_buffer.clear();
     create_session(name);
+    output_buffer = current_session->output_buffer; // restore
+
     current_process_group->processes[0]->run([this] {
-        std::println("Process name: {}", current_process_group->processes[0]->name);
-        std::string timestamp = std::format("{:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime);
-        std::println("Current time: {}", timestamp);
-        ShellUtils::shell_loop(*this, false);
+        if (output_buffer.empty()) {
+            output_buffer.push_back(std::format("Process name: {}", current_process_group->processes[0]->name));
+            output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
+            output_buffer.push_back(std::format("Line info: {}/{}", output_buffer.size(), output_buffer.size()));
+        }
+        
+        current_session->output_buffer = output_buffer; // make sure saved again after run
     });
 }
 
 void Shell::switch_screen(const std::string &name)
 {
+    if (current_session) {
+        current_session->output_buffer = output_buffer; //save
+    }
+
+    output_buffer.clear();
     switch_session(name);
-    ShellUtils::clear_screen();
+    output_buffer = current_session->output_buffer; //restore
+
     current_session->process_groups[0].processes[0]->run([this]() {
-        std::println("Process name: {}", current_process_group->processes[0]->name);
-        std::string timestamp = std::format("{:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime);
-        std::println("Current time: {}", timestamp);
-       ShellUtils::shell_loop(*this, false);
+        if (output_buffer.empty()) {
+            output_buffer.push_back(std::format("Process name: {}", current_process_group->processes[0]->name));
+            output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
+            output_buffer.push_back(std::format("Line info: {}/{}", output_buffer.size(), output_buffer.size()));
+        }
     });
 }
 
 void Shell::exit_screen()
 {
-    current_session = sessions.back();
-    current_session->process_groups[0].processes[0]->run([this]() {
-        ShellUtils::shell_loop(*this, false);
-    });
+    for (auto& session : sessions) {
+        if (session->name == "pst") {
+            if (current_session && current_session->name != "pst") {
+                current_session->output_buffer = output_buffer;
+            }
+
+            current_session = session;
+            current_process_group = std::make_shared<ProcessGroup>(current_session->process_groups[0]);
+            output_buffer = current_session->output_buffer;
+            break;
+        }
+    }
 }
 
 void Shell::create_session(const std::string &session_name, bool has_leader)
@@ -315,6 +505,7 @@ void Shell::create_session(const std::string &session_name, bool has_leader)
     auto new_session = std::make_shared<Session>();
     new_session->id = current_sid++;
     new_session->name = session_name;
+
     auto now = std::chrono::system_clock::now();
     // Truncate to seconds precision
     auto now_seconds = std::chrono::time_point_cast<std::chrono::seconds>(now);

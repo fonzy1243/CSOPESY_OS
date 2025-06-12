@@ -11,9 +11,12 @@
 #endif
 
 #include <ftxui/component/screen_interactive.hpp>
+#include <random>
 
+#include "../../cmake-build-release/_deps/ftxui-src/include/ftxui/dom/elements.hpp"
 #include "../process/process.h"
 #include "../session/session.h"
+#include "../scheduler/scheduler.h"
 
 class Shell;
 
@@ -39,14 +42,30 @@ namespace ShellUtils {
     extern std::function<void(Shell&, bool)> shell_loop;
     void handle_screen_cmd(Shell& shell, std::string input, bool is_initial_shell);
     void display_smi(Shell& shell);
+    void toggle_marquee_mode(Shell& shell);
+    void update_marquee_position(Shell& shell);
+    ftxui::Element create_marquee_display(Shell& shell);
 };
 
 class Shell {
 public:
+    Scheduler scheduler{4};
     std::vector<std::shared_ptr<Session>> sessions;
     std::shared_ptr<Session> current_session;
     std::shared_ptr<ProcessGroup> current_process_group;
     std::shared_ptr<Process> shell_process = std::make_shared<Process>(0, "pts");
+
+    // Marquee
+    bool marquee_mode{false};
+    std::string marquee_text{"So many weapons, Aphelios. The deadliest is your faith."};
+    int marquee_x{0};
+    int marquee_y{0};
+    int marquee_dx{1};
+    int marquee_dy{1};
+    int marquee_width{80};
+    int marquee_height{20};
+    std::chrono::steady_clock::time_point last_marquee_update{std::chrono::steady_clock::now()};
+    std::mt19937 marquee_rng{std::random_device{}()};
 
     std::deque<std::string> last_console_output;
     std::deque<std::string> output_buffer;
@@ -65,7 +84,6 @@ public:
     void exit_screen();
 
 private:
-    std::deque<std::shared_ptr<Process>> ready_queue;
     uint16_t current_pid{0};
     uint16_t current_sid{0};
 

@@ -49,6 +49,7 @@ namespace ShellUtils {
 
 class Shell {
 public:
+    Scheduler scheduler{4};
     std::vector<std::shared_ptr<Session>> sessions;
     std::shared_ptr<Session> current_session;
     std::shared_ptr<ProcessGroup> current_process_group;
@@ -83,7 +84,6 @@ public:
     void exit_screen();
 
 private:
-    std::deque<std::shared_ptr<Process>> ready_queue;
     uint16_t current_pid{0};
     uint16_t current_sid{0};
 

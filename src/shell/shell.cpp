@@ -523,7 +523,18 @@ ftxui::Element ShellUtils::create_marquee_display(Shell &shell)
 
 void Shell::run()
 {
+    sessions[0]->process_groups[0].processes.resize(11);
+    shell_process->generate_print_instructions();
+    for (int i = 1; i < 10; i++) {
+        sessions[0]->process_groups[0].processes[i] = std::make_shared<Process>(i, std::format("process_{}", i));
+        sessions[0]->process_groups[0].processes[i]->generate_print_instructions();
+    }
+    scheduler.start();
+    for (int i = 0; i < 10; i++) {
+        scheduler.add_process(sessions[0]->process_groups[0].processes[i]);
+    }
     shell_process->run(std::bind(ShellUtils::shell_loop, std::ref(*this), true));
+    scheduler.stop();
 }
 
 void Shell::create_screen(const std::string &name)

@@ -8,6 +8,7 @@
 #include <cassert>
 #include <algorithm>
 #include <chrono>
+#include <random>
 #include <memory>
 
 // FTXUI
@@ -132,7 +133,6 @@ std::string ShellUtils::get_console_output()
     }
 
     for (SHORT y = 0; y <= last_effective_row; ++y) {
-        std::string current_line_buffer;
         int last_char_col_in_row = -1;
 
         for (SHORT x_check = buffer_size.X - 1; x_check >= 0; --x_check) {
@@ -143,12 +143,13 @@ std::string ShellUtils::get_console_output()
         }
 
         if (last_char_col_in_row == -1) {
-            lines_content.push_back("");
+            lines_content.emplace_back("");
         } else {
+            std::string current_line_buffer;
             for (SHORT x = 0; x <= last_char_col_in_row; ++x) {
-                CHAR_INFO char_info = buffer_data[static_cast<DWORD>(y) * buffer_size.X + x];
-                current_line_buffer += convert_attributes_to_ansi(char_info.Attributes, current_attributes);
-                current_line_buffer += char_info.Char.AsciiChar;
+                auto [Char, Attributes] = buffer_data[static_cast<DWORD>(y) * buffer_size.X + x];
+                current_line_buffer += convert_attributes_to_ansi(Attributes, current_attributes);
+                current_line_buffer += Char.AsciiChar;
             }
             lines_content.push_back(current_line_buffer);
         }
@@ -171,9 +172,9 @@ std::string ShellUtils::get_console_output()
 
 void ShellUtils::print_header(std::deque<std::string>& output_buffer)
 {
-    output_buffer.push_back(std::string(ascii_art_name));
-    output_buffer.push_back("Welcome to ApheliOS!");
-    output_buffer.push_back("Type 'exit' to quit, and 'clear' to clear the screen.");
+    output_buffer.emplace_back(ascii_art_name);
+    output_buffer.emplace_back("Welcome to ApheliOS!");
+    output_buffer.emplace_back("Type 'exit' to quit, and 'clear' to clear the screen.");
 }
 
 void ShellUtils::process_command(Shell &shell, const std::string &input, bool is_initial_shell)
@@ -204,7 +205,7 @@ void ShellUtils::process_command(Shell &shell, const std::string &input, bool is
                 shell.current_session->output_buffer = shell.output_buffer;
             }
 
-            shell.output_buffer.push_back("[screen is terminating]");//append
+            shell.output_buffer.emplace_back("[screen is terminating]");//append
 
             if (shell.current_session) { //save
                 shell.current_session->output_buffer = shell.output_buffer;
@@ -220,15 +221,17 @@ void ShellUtils::process_command(Shell &shell, const std::string &input, bool is
         clear_screen();
         shell.output_buffer.clear();
     } else if (command_lower == "initialize") {
-        shell.output_buffer.push_back("Initialize command recognized.");
+        shell.output_buffer.emplace_back("Initialize command recognized.");
     } else if (command_lower.contains("screen")) {
         handle_screen_cmd(shell, command, is_initial_shell);
+    } else if (command_lower == "marquee") {
+        toggle_marquee_mode(shell);
     } else if (command_lower == "scheduler-test") {
-        shell.output_buffer.push_back("Scheduler test command recognized.");
+        shell.output_buffer.emplace_back("Scheduler test command recognized.");
     } else if (command_lower == "scheduler-stop") {
-        shell.output_buffer.push_back("Scheduler stop command recognized.");
+        shell.output_buffer.emplace_back("Scheduler stop command recognized.");
     } else if (command_lower == "report-util") {
-        shell.output_buffer.push_back("Report utilization command recognized.");
+        shell.output_buffer.emplace_back("Report utilization command recognized.");
     } else if (command_lower == "smi") {
         display_smi(shell);
     } else if (command_lower != "exit") {
@@ -253,7 +256,7 @@ void ShellUtils::display_smi(Shell &shell)
     });
 
     auto cell = [](const char* t) {
-        auto style = [](Element e) {
+        auto style = [](const Element &e) {
             return e | flex | size(WIDTH, GREATER_THAN, 6) | size(HEIGHT, EQUAL, 1);
 
         };
@@ -261,7 +264,7 @@ void ShellUtils::display_smi(Shell &shell)
     };
 
     auto empty_cell = []() {
-        auto style = [](Element e) {
+        auto style = [](const Element &e) {
             return e | flex | center | size(WIDTH, GREATER_THAN, 10) | size(HEIGHT, EQUAL, 1);
         };
         return text("") | style;
@@ -312,7 +315,7 @@ void ShellUtils::display_smi(Shell &shell)
         {"Processes:"},
       { "GPU", "GI","CI", "      ", "PID", "Type", "Process name", "GPU Memory" },
         {"", "ID", "ID", "      ", "", "", "", "Usage"},
-      { "0", "N/A","N/A", "      ", "11368", "C+G", "C:\\Windows\\System32\\dwm.exe", "N/A" },
+      { "0", "N/A","N/A", "      ", "11368", "C+G", R"(C:\Windows\System32\dwm.exe)", "N/A" },
       { "0", "N/A","N/A", "      ","2116", "C+G", "C:\\w...bXboxGameBarWidgets.exe", "N/A" },
       { "0", "N/A","N/A", "      ","5224", "C+G", "C:\\x123.0.2202.56\\msedgewebview2.exe", "N/A" },
       { "0", "N/A","N/A", "      ","6640", "C+G", "C:\\Windows\\explorer.exe", "N/A" },
@@ -389,11 +392,14 @@ std::function<void(Shell&, bool)> ShellUtils::shell_loop = [](Shell& shell, bool
 
     auto prompt = text(prompt_text) | color(Color::Default);
 
-    auto layout = Container::Vertical({input_field});
+    const auto layout = Container::Vertical({input_field});
 
-    auto renderer = Renderer(layout, [&] {
+    const auto renderer = Renderer(layout, [&] {
+        auto marquee_display = create_marquee_display(shell);
+
         return vbox({
             vbox(render_output() | flex),
+            marquee_display,
             hbox({
                 text(prompt_text),
                 input_field->Render() | selectionForegroundColor(Color::Aquamarine1) | flex,
@@ -405,6 +411,10 @@ std::function<void(Shell&, bool)> ShellUtils::shell_loop = [](Shell& shell, bool
 
     while (!shell.quit) {
         loop.RunOnce();
+
+        if (shell.marquee_mode) {
+            shell.screen.RequestAnimationFrame();
+        }
     }
 };
 
@@ -429,6 +439,79 @@ void ShellUtils::handle_screen_cmd(Shell& shell, std::string input, bool is_init
     } else {
         shell.switch_screen(args[1].data());
     }
+}
+
+void ShellUtils::toggle_marquee_mode(Shell& shell)
+{
+    shell.marquee_mode = !shell.marquee_mode;
+    if (shell.marquee_mode) {
+        shell.output_buffer.emplace_back("Marquee mode enabled! Use 'marquee' to disable.");
+        std::uniform_int_distribution x_dist(0, shell.marquee_width - static_cast<int>(shell.marquee_text.length()));
+        std::uniform_int_distribution y_dist(0, shell.marquee_height - 1);
+        shell.marquee_x = x_dist(shell.marquee_rng);
+        shell.marquee_y = y_dist(shell.marquee_rng);
+    } else {
+        shell.output_buffer.emplace_back("Marquee mode disabled!");
+    }
+}
+
+void ShellUtils::update_marquee_position(Shell& shell)
+{
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - shell.last_marquee_update);
+
+    if (elapsed.count() >= 50) {
+        shell.marquee_x += shell.marquee_dx;
+        shell.marquee_y += shell.marquee_dy;
+
+        int text_width = static_cast<int>(shell.marquee_text.length());
+        if (shell.marquee_x <= 0 || shell.marquee_x + text_width > shell.marquee_width) {
+            shell.marquee_dx = -shell.marquee_dx;
+            shell.marquee_x = std::clamp(shell.marquee_x, 0, shell.marquee_width - text_width);
+        }
+
+        if (shell.marquee_y <= 0 || shell.marquee_y >= shell.marquee_height) {
+            shell.marquee_dy = -shell.marquee_dy;
+            shell.marquee_y = std::clamp(shell.marquee_y, 0, shell.marquee_height - 1);
+        }
+
+        shell.last_marquee_update = now;
+    }
+}
+
+ftxui::Element ShellUtils::create_marquee_display(Shell &shell)
+{
+    using namespace ftxui;
+
+    if (!shell.marquee_mode) {
+        return text("") | size(HEIGHT, EQUAL, 0);
+    }
+
+    update_marquee_position(shell);
+
+    std::vector<std::vector<Element>> marquee_grid;
+
+    for (int y = 0; y < shell.marquee_height; y++) {
+        std::vector<Element> row;
+        for (int x = 0; x < shell.marquee_width;) {
+            if (y == shell.marquee_y && x >= shell.marquee_x && x < shell.marquee_x + static_cast<int>(shell.marquee_text.length())) {
+                for (size_t i = 0; i < shell.marquee_text.length() && x < shell.marquee_width; i++, x++) {
+                    row.push_back(text(std::string(1, shell.marquee_text[i])) | color(Color::Cyan));
+                }
+            } else {
+                row.push_back(text(" "));
+                x++;
+            }
+        }
+        marquee_grid.push_back(std::move(row));
+    }
+
+    std::vector<Element> marquee_rows;
+    for (const auto& row : marquee_grid) {
+        marquee_rows.push_back(hbox(row));
+    }
+
+    return vbox(marquee_rows) | border | size(WIDTH, EQUAL, shell.marquee_width + 2) | size(HEIGHT, EQUAL, shell.marquee_height + 2);
 }
 
 

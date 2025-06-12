@@ -10,7 +10,11 @@ add_executable(CSOPESY_OS src/main.cpp
         src/process/process.cpp
         src/process/process.h
         src/session/session.cpp
-        src/session/session.h)
+        src/session/session.h
+        src/scheduler/scheduler.cpp
+        src/scheduler/scheduler.h
+        src/process/instruction.cpp
+        src/process/instruction.h)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(CSOPESY_OS PRIVATE -std=c++23)

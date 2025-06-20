@@ -45,6 +45,7 @@ public:
     void stop();
 
     void add_process(std::shared_ptr<Process> process);
+    void write_utilization_report();
 
     std::vector<std::shared_ptr<Process>> get_finished();
     std::vector<std::shared_ptr<Process>> get_running();

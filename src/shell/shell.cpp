@@ -231,7 +231,8 @@ void ShellUtils::process_command(Shell &shell, const std::string &input, bool is
     } else if (command_lower == "scheduler-stop") {
         shell.output_buffer.emplace_back("Scheduler stop command recognized.");
     } else if (command_lower == "report-util") {
-        shell.output_buffer.emplace_back("Report utilization command recognized.");
+        shell.scheduler.write_utilization_report();
+        shell.output_buffer.emplace_back("Utilization report saved to logs/csopesy-log.txt");
     } else if (command_lower == "smi") {
         display_smi(shell);
     } else if (command_lower != "exit") {

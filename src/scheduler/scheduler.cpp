@@ -1,7 +1,9 @@
 //
 // Created by Alfon on 6/12/2025.
 //
-
+#include <fstream>
+#include <format>
+#include <filesystem>
 #include "scheduler.h"
 
  Scheduler::Scheduler(uint16_t num_cores) : num_cores(num_cores)
@@ -133,8 +135,23 @@ std::vector<std::shared_ptr<Process>> Scheduler::get_running()
 std::string Scheduler::get_status_string()
  {
      std::string result = "-----------------------------\n";
-     result += "Running processes:\n";
+     result += "CPU Utilization Report:\n";
 
+     int cores_used;
+     {
+         std::lock_guard lock(running_mutex);
+         cores_used = static_cast<int>(running_processes.size());
+     }
+
+     int cores_available = static_cast<int>(num_cores) - cores_used;
+     float utilization = (num_cores > 0) ? (static_cast<float>(cores_used) / num_cores) * 100.0f : 0.0f;
+
+     result += std::format("Cores used: {}\n", cores_used);
+     result += std::format("Cores available: {}\n", cores_available);
+     result += std::format("CPU utilization: {:.2f}%\n", utilization);
+     result += "-----------------------------\n";
+
+     result += "Running processes:\n";
      auto running_processes = get_running();
      for (const auto& process : running_processes) {
          result += std::format("{}\n", process->get_status_string());
@@ -149,3 +166,18 @@ std::string Scheduler::get_status_string()
 
      return result;
  }
+
+void Scheduler::write_utilization_report()
+ {
+     std::filesystem::create_directories("logs");
+     std::string report = get_status_string();
+
+     std::string log_filename = "logs/csopesy-log.txt";
+
+     std::ofstream out(log_filename, std::ios::out | std::ios::trunc);
+     if (out.is_open()) {
+         out << report;
+         out.close();
+     }
+ }
+

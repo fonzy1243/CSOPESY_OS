@@ -52,7 +52,6 @@ public:
     Scheduler scheduler{4};
     std::vector<std::shared_ptr<Session>> sessions;
     std::shared_ptr<Session> current_session;
-    std::shared_ptr<ProcessGroup> current_process_group;
     std::shared_ptr<Process> shell_process = std::make_shared<Process>(0, "pts");
 
     // Marquee
@@ -88,7 +87,8 @@ private:
     uint16_t current_sid{0};
 
 
-    void create_session(const std::string &session_name, bool has_leader = false);
+    // added an extra argument for processes
+    void create_session(const std::string &session_name, bool has_leader = false, std::shared_ptr<Process> process = nullptr);
     void switch_session(const std::string &session_name);
 
 };

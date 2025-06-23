@@ -231,7 +231,8 @@ void ShellUtils::process_command(Shell &shell, const std::string &input, bool is
     } else if (command_lower == "scheduler-stop") {
         shell.output_buffer.emplace_back("Scheduler stop command recognized.");
     } else if (command_lower == "report-util") {
-        shell.output_buffer.emplace_back("Report utilization command recognized.");
+        shell.scheduler.write_utilization_report();
+        shell.output_buffer.emplace_back("Utilization report saved to logs/csopesy-log.txt");
     } else if (command_lower == "smi") {
         display_smi(shell);
     } else if (command_lower != "exit") {
@@ -428,7 +429,8 @@ void ShellUtils::handle_screen_cmd(Shell& shell, std::string input, bool is_init
     auto args = std::vector(words.begin(), words.end());
 
     // FOR NOW
-    assert(args.size() == 2);
+    // i commented out cause of ls command
+    // assert(args.size() == 2);
 
     if (shell.current_session) {
     shell.current_session->output_buffer = shell.output_buffer;
@@ -436,8 +438,11 @@ void ShellUtils::handle_screen_cmd(Shell& shell, std::string input, bool is_init
 
     if (args[0] == "-S") {
         shell.create_screen(args[1].data());
-    } else {
+    } else if (args[0] == "-r") {
         shell.switch_screen(args[1].data());
+    } else if (args[0] == "-ls") {
+        std::string status = shell.scheduler.get_status_string();
+        shell.output_buffer.push_back(status);
     }
 }
 
@@ -515,86 +520,103 @@ ftxui::Element ShellUtils::create_marquee_display(Shell &shell)
 }
 
 
- Shell::Shell()
- {
-    create_session("pst", true);
- }
-
+Shell::Shell()
+{
+    create_session("pst", true, nullptr);
+    // Initialize the header for the main session
+    ShellUtils::print_header(output_buffer);
+    current_session->output_buffer = output_buffer;
+}
 
 void Shell::run()
 {
-    sessions[0]->process_groups[0].processes.resize(11);
-    shell_process->generate_print_instructions();
-    for (int i = 1; i < 10; i++) {
-        sessions[0]->process_groups[0].processes[i] = std::make_shared<Process>(i, std::format("process_{}", i));
-        sessions[0]->process_groups[0].processes[i]->generate_print_instructions();
+    // create needed processes
+    for (int i = 1; i <= 10; i++) {
+        auto process = std::make_shared<Process>(i, std::format("process_{}", i));
+        process->generate_print_instructions();
+
+        // store processes in sessions
+        auto session_name = std::format("session_{}", i);
+        create_session(session_name, false, process);
+
     }
+
+    // switch session back to original, overrides if removed
+    switch_session("pst");
+
     scheduler.start();
-    for (int i = 0; i < 10; i++) {
-        scheduler.add_process(sessions[0]->process_groups[0].processes[i]);
+    // Add all processes to scheduler
+    for (const auto& session : sessions) {
+        if (session->process && session->name != "pst") {
+            scheduler.add_process(session->process);
+        }
     }
+
     shell_process->run(std::bind(ShellUtils::shell_loop, std::ref(*this), true));
+
     scheduler.stop();
 }
 
+
 void Shell::create_screen(const std::string &name)
 {
-
     if (current_session) {
         current_session->output_buffer = output_buffer; // save
     }
 
-    output_buffer.clear();
-    create_session(name);
-    output_buffer = current_session->output_buffer; // restore
+    // Create new process for the screen
+    auto new_process = std::make_shared<Process>(current_pid++, name);
+    create_session(name, false, new_process);
 
-    current_process_group->processes[0]->run([this] {
-        if (output_buffer.empty()) {
-            output_buffer.push_back(std::format("Process name: {}", current_process_group->processes[0]->name));
-            output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
-            output_buffer.push_back(std::format("Line info: {}/{}", output_buffer.size(), output_buffer.size()));
-        }
-        
-        current_session->output_buffer = output_buffer; // make sure saved again after run
+    output_buffer.clear();
+
+    current_session->process->run([this] {
+        output_buffer.push_back(std::format("Process name: {}", current_session->process->name));
+        output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
+        output_buffer.push_back(std::format("Line info: {}/{}", output_buffer.size(), output_buffer.size()));
+
+        current_session->output_buffer = output_buffer; // save
     });
 }
 
 void Shell::switch_screen(const std::string &name)
 {
     if (current_session) {
-        current_session->output_buffer = output_buffer; //save
+        current_session->output_buffer = output_buffer; // save
     }
 
-    output_buffer.clear();
     switch_session(name);
-    output_buffer = current_session->output_buffer; //restore
+    output_buffer = current_session->output_buffer; // restore
 
-    current_session->process_groups[0].processes[0]->run([this]() {
-        if (output_buffer.empty()) {
-            output_buffer.push_back(std::format("Process name: {}", current_process_group->processes[0]->name));
+    if (output_buffer.empty()) {
+        current_session->process->run([this]() {
+            output_buffer.push_back(std::format("Process name: {}", current_session->process->name));
             output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
             output_buffer.push_back(std::format("Line info: {}/{}", output_buffer.size(), output_buffer.size()));
-        }
-    });
+
+            current_session->output_buffer = output_buffer;
+        });
+    }
 }
 
 void Shell::exit_screen()
 {
+    // Save current session state if it's not pst
+    if (current_session && current_session->name != "pst") {
+        current_session->output_buffer = output_buffer;
+    }
+
+    // Find and switch to pst session
     for (auto& session : sessions) {
         if (session->name == "pst") {
-            if (current_session && current_session->name != "pst") {
-                current_session->output_buffer = output_buffer;
-            }
-
             current_session = session;
-            current_process_group = std::make_shared<ProcessGroup>(current_session->process_groups[0]);
             output_buffer = current_session->output_buffer;
             break;
         }
     }
 }
 
-void Shell::create_session(const std::string &session_name, bool has_leader)
+void Shell::create_session(const std::string &session_name, bool has_leader, std::shared_ptr<Process> process)
 {
     auto new_session = std::make_shared<Session>();
     new_session->id = current_sid++;
@@ -605,21 +627,14 @@ void Shell::create_session(const std::string &session_name, bool has_leader)
     auto now_seconds = std::chrono::time_point_cast<std::chrono::seconds>(now);
     new_session->createTime = std::chrono::zoned_time{std::chrono::current_zone(), now_seconds};
 
-    auto new_group = std::make_shared<ProcessGroup>();
-    new_group->sid = new_session->id;
+    if (has_leader) {
+        new_session->process = shell_process;
+    } else {
+        new_session->process = process ? process : std::make_shared<Process>(current_pid++, session_name);
+    }
 
-     if (!has_leader) {
-         auto new_process = std::make_shared<Process>(current_pid, session_name);
-         new_group->id = current_pid++;
-         new_group->processes.push_back(new_process);
-     } else {
-         new_group->processes.push_back(shell_process);
-     }
-
-    new_session->process_groups.push_back(*new_group);
     sessions.push_back(new_session);
     current_session = new_session;
-    current_process_group = new_group;
 }
 
 void Shell::switch_session(const std::string &session_name)
@@ -627,7 +642,6 @@ void Shell::switch_session(const std::string &session_name)
     for (auto &session : sessions) {
         if (session->name == session_name) {
             current_session = session;
-            current_process_group = std::make_shared<ProcessGroup>(current_session->process_groups[0]);
             break;
         }
     }

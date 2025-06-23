@@ -8,17 +8,10 @@
 #include <vector>
 #include "../process/process.h"
 
-struct ProcessGroup
-{
-    std::vector<std::shared_ptr<Process>> processes;
-    uint16_t id;
-    uint16_t sid;
-};
-
 class Session
 {
 public:
-    std::vector<ProcessGroup> process_groups;
+    std::shared_ptr<Process> process;  // One process per session
     uint16_t id;
     std::string name;
     std::chrono::zoned_time<std::chrono::duration<long long>> createTime;
@@ -29,3 +22,4 @@ public:
 };
 
 #endif //SESSION_H
+

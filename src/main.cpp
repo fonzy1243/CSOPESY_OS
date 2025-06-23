@@ -1,7 +1,7 @@
-#include "shell/shell.h"
+#include "aphelios.h"
 
 int main()
 {
-    Shell shell;
-    shell.run();
+    ApheliOS apheliOs;
+    apheliOs.run();
 }

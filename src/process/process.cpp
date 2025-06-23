@@ -37,7 +37,7 @@ void Process::execute(uint16_t core_id)
         instruction->execute(*this);
 
         // Delay after each instruction, just for demo of week 6, remove after
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
     end_time = std::chrono::system_clock::now();
@@ -50,12 +50,40 @@ void Process::add_instruction(std::shared_ptr<Instruction> instruction)
 
 void Process::generate_print_instructions()
 {
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 50; ++i) {
         std::string message = std::format("Hello world from {}!", name);
         auto print_instruction = std::make_shared<Instruction>(InstructionType::ePrint, message);
 
         add_instruction(print_instruction);
     }
+}
+
+void Process::generate_instructions()
+{
+    // sample code for creating declare instructions
+    auto declare1 = std::make_shared<Instruction>(InstructionType::eDeclare, "a", (uint16_t)100);
+    auto declare2 = std::make_shared<Instruction>(InstructionType::eDeclare, "b", (uint16_t)50);
+    auto declare3 = std::make_shared<Instruction>(InstructionType::eDeclare, "c", (uint16_t)400);
+
+    add_instruction(declare1);
+    add_instruction(declare2);
+    add_instruction(declare3);
+
+    // sample code for creating add instructions
+    auto add_var_var = std::make_shared<Instruction>(InstructionType::eAdd, "c", "a", "b");
+    auto add_val_val = std::make_shared<Instruction>(InstructionType::eAdd, "c", 2, 8);
+
+    add_instruction(add_var_var);
+    add_instruction(add_val_val);
+
+    // sample code for creating subtract instructions
+
+    // the var1 can be a variable that hasn't been declared yet
+    auto sub_var_var = std::make_shared<Instruction>(InstructionType::eSubtract, "d", "a", "b");
+    auto sub_val_val = std::make_shared<Instruction>(InstructionType::eSubtract, "e", 10, 8);
+
+    add_instruction(sub_var_var);
+    add_instruction(sub_val_val);
 }
 
 

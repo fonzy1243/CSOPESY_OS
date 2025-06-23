@@ -534,6 +534,7 @@ void Shell::run()
     for (int i = 1; i <= 10; i++) {
         auto process = std::make_shared<Process>(i, std::format("process_{}", i));
         process->generate_print_instructions();
+        process->generate_instructions();
 
         // store processes in sessions
         auto session_name = std::format("session_{}", i);

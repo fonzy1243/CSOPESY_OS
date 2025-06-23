@@ -10,6 +10,7 @@
 #include <chrono>
 #include <atomic>
 #include <thread>
+#include <map>
 #include "instruction.h"
 
 class Instruction;
@@ -32,6 +33,11 @@ public:
     std::atomic<ProcessState> current_state{ProcessState::eReady};
     std::atomic<uint16_t> assigned_core{9999};
 
+    // storing variables in memory
+    std::map<std::string, size_t> variable_indices;  // store indices here that points to the memory array
+    std::vector<uint16_t> memory;  // memory array
+    size_t next_free_index = 0;  // we use this to track next possible index in memory
+
     std::chrono::system_clock::time_point creation_time;
     std::chrono::system_clock::time_point start_time;
     std::chrono::system_clock::time_point end_time;
@@ -50,6 +56,9 @@ public:
 
     void execute(uint16_t core_id);
     void add_instruction(std::shared_ptr<Instruction> instruction);
+
+    // function to try out the declare, add, subtract
+    void generate_instructions();
     // For Week 6 homework
     void generate_print_instructions();
 

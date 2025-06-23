@@ -1,4 +1,5 @@
 #include "shell.h"
+#include "../aphelios.h"
 
 #include <iostream>
 #include <format>
@@ -177,73 +178,6 @@ void ShellUtils::print_header(std::deque<std::string>& output_buffer)
     output_buffer.emplace_back("Type 'exit' to quit, and 'clear' to clear the screen.");
 }
 
-void ShellUtils::process_command(Shell &shell, const std::string &input, bool is_initial_shell)
-{
-    std::string command;
-
-    if (const size_t start = input.find_first_not_of(" \t\n\r\f\v"); start == std::string::npos) {
-        command = "";
-    } else {
-        const size_t end = input.find_last_not_of(" \t\n\r\f\v");
-        command = input.substr(start, end - start + 1);
-    }
-
-
-    // lowercase command if needed
-    // not sure if we'll be needing case-sensitive commands
-    std::string command_lower =
-            command |
-            std::ranges::views::transform([](unsigned char c) { return static_cast<char>(std::tolower(c)); }) |
-            std::ranges::to<std::string>();
-
-    if (command_lower == "exit") {
-        if (is_initial_shell) {
-            shell.quit = true;
-        } else {
-            //save current
-            if (shell.current_session) {
-                shell.current_session->output_buffer = shell.output_buffer;
-            }
-
-            shell.output_buffer.emplace_back("[screen is terminating]");//append
-
-            if (shell.current_session) { //save
-                shell.current_session->output_buffer = shell.output_buffer;
-            }
-
-            shell.exit_screen();
-            shell.quit = false;
-            shell.exit_to_main_menu = true;
-            return;
-        }
-    }
-    if (command_lower == "clear") {
-        clear_screen();
-        shell.output_buffer.clear();
-    } else if (command_lower == "initialize") {
-        shell.output_buffer.emplace_back("Initialize command recognized.");
-    } else if (command_lower.contains("screen")) {
-        handle_screen_cmd(shell, command, is_initial_shell);
-    } else if (command_lower == "marquee") {
-        toggle_marquee_mode(shell);
-    } else if (command_lower == "scheduler-test") {
-        shell.output_buffer.emplace_back("Scheduler test command recognized.");
-    } else if (command_lower == "scheduler-stop") {
-        shell.output_buffer.emplace_back("Scheduler stop command recognized.");
-    } else if (command_lower == "report-util") {
-        shell.scheduler.write_utilization_report();
-        shell.output_buffer.emplace_back("Utilization report saved to logs/csopesy-log.txt");
-    } else if (command_lower == "smi") {
-        display_smi(shell);
-    } else if (command_lower != "exit") {
-        shell.output_buffer.push_back(std::format("{}: command not found", command));
-    }
-
-    if (is_initial_shell) {
-        shell.exit_to_main_menu = false;
-    }
-}
-
 void ShellUtils::display_smi(Shell &shell)
 {
    using namespace ftxui;
@@ -345,9 +279,8 @@ void ShellUtils::display_smi(Shell &shell)
     shell.output_buffer.push_back(smi_output);
 }
 
-
-
-std::function<void(Shell&, bool)> ShellUtils::shell_loop = [](Shell& shell, bool print_head = false) {
+void Shell::shell_loop(bool print_header)
+{
     using namespace ftxui;
 
     std::string input;
@@ -355,19 +288,19 @@ std::function<void(Shell&, bool)> ShellUtils::shell_loop = [](Shell& shell, bool
 
     auto input_option = InputOption();
     input_option.on_enter = [&] {
-        shell.output_buffer.push_back(prompt_text + input);
+        output_buffer.push_back(prompt_text + input);
 
-        bool is_initial_shell = !shell.current_session || shell.current_session->name == "pst";
-        process_command(shell, input, is_initial_shell);
+        apheli_os.process_command(input);
 
         input.clear();
 
-        if (shell.quit) {
-            shell.screen.Exit();
+        if (apheli_os.quit) {
+            screen.Exit();
         }
 
-        shell.screen.RequestAnimationFrame();
+        screen.RequestAnimationFrame();
     };
+
     input_option.transform = [](InputState state) {
         if (state.focused || state.hovered) {
             state.element |= bgcolor(Color::RGBA(0, 0, 0, 0));
@@ -377,27 +310,22 @@ std::function<void(Shell&, bool)> ShellUtils::shell_loop = [](Shell& shell, bool
 
     Component input_field = Input(&input, input_option);
 
-    if (print_head && shell.output_buffer.empty()) {
-        print_header(shell.output_buffer);
+    if (print_header && output_buffer.empty()) {
+        ShellUtils::print_header(output_buffer);
     }
 
     auto render_output = [&] {
         std::vector<Element> elements;
-
-        for (const auto& line : shell.output_buffer) {
+        for (const auto& line : output_buffer) {
             elements.push_back(paragraph(line) | color(Color::Default));
         }
-
         return vbox(elements);
     };
-
-    auto prompt = text(prompt_text) | color(Color::Default);
 
     const auto layout = Container::Vertical({input_field});
 
     const auto renderer = Renderer(layout, [&] {
-        auto marquee_display = create_marquee_display(shell);
-
+        auto marquee_display = ShellUtils::create_marquee_display(*this);
         return vbox({
             vbox(render_output() | flex),
             marquee_display,
@@ -408,41 +336,14 @@ std::function<void(Shell&, bool)> ShellUtils::shell_loop = [](Shell& shell, bool
         }) | yflex | yframe;
     });
 
-    auto loop = Loop(&shell.screen, renderer);
+    auto loop = Loop(&screen, renderer);
 
-    while (!shell.quit) {
+    while (!apheli_os.quit) {
         loop.RunOnce();
 
-        if (shell.marquee_mode) {
-            shell.screen.RequestAnimationFrame();
+        if (marquee_mode) {
+            screen.RequestAnimationFrame();
         }
-    }
-};
-
-void ShellUtils::handle_screen_cmd(Shell& shell, std::string input, bool is_initial_shell)
-{
-    auto words = input | std::views::split(' ')
-    | std::views::filter([](auto&& str) { return !std::ranges::empty(str); })
-    | std::views::drop(1)
-    | std::views::transform([](auto&& str) { return std::string_view(str.begin(), str.end()); });
-
-    auto args = std::vector(words.begin(), words.end());
-
-    // FOR NOW
-    // i commented out cause of ls command
-    // assert(args.size() == 2);
-
-    if (shell.current_session) {
-    shell.current_session->output_buffer = shell.output_buffer;
-    }
-
-    if (args[0] == "-S") {
-        shell.create_screen(args[1].data());
-    } else if (args[0] == "-r") {
-        shell.switch_screen(args[1].data());
-    } else if (args[0] == "-ls") {
-        std::string status = shell.scheduler.get_status_string();
-        shell.output_buffer.push_back(status);
     }
 }
 
@@ -516,133 +417,15 @@ ftxui::Element ShellUtils::create_marquee_display(Shell &shell)
         marquee_rows.push_back(hbox(row));
     }
 
-    return vbox(marquee_rows) | border | size(WIDTH, GREATER_THAN, shell.marquee_width + 2) | size(HEIGHT, GREATER_THAN, shell.marquee_height + 2);
+    return vbox(marquee_rows) | border | size(WIDTH, EQUAL, shell.marquee_width + 2) | size(HEIGHT, EQUAL, shell.marquee_height + 2);
 }
 
 
-Shell::Shell()
+Shell::Shell(ApheliOS& aphelios_ref) : apheli_os(aphelios_ref)
 {
-    create_session("pst", true, nullptr);
-    // Initialize the header for the main session
-    ShellUtils::print_header(output_buffer);
-    current_session->output_buffer = output_buffer;
 }
 
-void Shell::run()
+void Shell::run(bool print_header)
 {
-    // create needed processes
-    for (int i = 1; i <= 10; i++) {
-        auto process = std::make_shared<Process>(i, std::format("process_{}", i));
-        process->generate_print_instructions();
-
-        // store processes in sessions
-        auto session_name = std::format("session_{}", i);
-        create_session(session_name, false, process);
-
-    }
-
-    // switch session back to original, overrides if removed
-    switch_session("pst");
-
-    scheduler.start();
-    // Add all processes to scheduler
-    for (const auto& session : sessions) {
-        if (session->process && session->name != "pst") {
-            scheduler.add_process(session->process);
-        }
-    }
-
-    shell_process->run(std::bind(ShellUtils::shell_loop, std::ref(*this), true));
-
-    scheduler.stop();
-}
-
-
-void Shell::create_screen(const std::string &name)
-{
-    if (current_session) {
-        current_session->output_buffer = output_buffer; // save
-    }
-
-    // Create new process for the screen
-    auto new_process = std::make_shared<Process>(current_pid++, name);
-    create_session(name, false, new_process);
-
-    output_buffer.clear();
-
-    current_session->process->run([this] {
-        output_buffer.push_back(std::format("Process name: {}", current_session->process->name));
-        output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
-        output_buffer.push_back(std::format("Line info: {}/{}", output_buffer.size(), output_buffer.size()));
-
-        current_session->output_buffer = output_buffer; // save
-    });
-}
-
-void Shell::switch_screen(const std::string &name)
-{
-    if (current_session) {
-        current_session->output_buffer = output_buffer; // save
-    }
-
-    switch_session(name);
-    output_buffer = current_session->output_buffer; // restore
-
-    if (output_buffer.empty()) {
-        current_session->process->run([this]() {
-            output_buffer.push_back(std::format("Process name: {}", current_session->process->name));
-            output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
-            output_buffer.push_back(std::format("Line info: {}/{}", output_buffer.size(), output_buffer.size()));
-
-            current_session->output_buffer = output_buffer;
-        });
-    }
-}
-
-void Shell::exit_screen()
-{
-    // Save current session state if it's not pst
-    if (current_session && current_session->name != "pst") {
-        current_session->output_buffer = output_buffer;
-    }
-
-    // Find and switch to pst session
-    for (auto& session : sessions) {
-        if (session->name == "pst") {
-            current_session = session;
-            output_buffer = current_session->output_buffer;
-            break;
-        }
-    }
-}
-
-void Shell::create_session(const std::string &session_name, bool has_leader, std::shared_ptr<Process> process)
-{
-    auto new_session = std::make_shared<Session>();
-    new_session->id = current_sid++;
-    new_session->name = session_name;
-
-    auto now = std::chrono::system_clock::now();
-    // Truncate to seconds precision
-    auto now_seconds = std::chrono::time_point_cast<std::chrono::seconds>(now);
-    new_session->createTime = std::chrono::zoned_time{std::chrono::current_zone(), now_seconds};
-
-    if (has_leader) {
-        new_session->process = shell_process;
-    } else {
-        new_session->process = process ? process : std::make_shared<Process>(current_pid++, session_name);
-    }
-
-    sessions.push_back(new_session);
-    current_session = new_session;
-}
-
-void Shell::switch_session(const std::string &session_name)
-{
-    for (auto &session : sessions) {
-        if (session->name == session_name) {
-            current_session = session;
-            break;
-        }
-    }
+    shell_loop(print_header);
 }

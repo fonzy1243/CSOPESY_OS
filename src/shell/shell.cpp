@@ -511,7 +511,7 @@ ftxui::Element ShellUtils::create_marquee_display(Shell &shell)
         marquee_rows.push_back(hbox(row));
     }
 
-    return vbox(marquee_rows) | border | size(WIDTH, EQUAL, shell.marquee_width + 2) | size(HEIGHT, EQUAL, shell.marquee_height + 2);
+    return vbox(marquee_rows) | border | size(WIDTH, GREATER_THAN, shell.marquee_width + 2) | size(HEIGHT, GREATER_THAN, shell.marquee_height + 2);
 }
 
 

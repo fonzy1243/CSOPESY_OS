@@ -14,7 +14,9 @@ add_executable(CSOPESY_OS src/main.cpp
         src/scheduler/scheduler.cpp
         src/scheduler/scheduler.h
         src/process/instruction.cpp
-        src/process/instruction.h)
+        src/process/instruction.h
+        src/ApheliOS.cpp
+        src/aphelios.h)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(CSOPESY_OS PRIVATE -std=c++23)

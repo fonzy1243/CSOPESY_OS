@@ -423,6 +423,7 @@ ftxui::Element ShellUtils::create_marquee_display(Shell &shell)
 
 Shell::Shell(ApheliOS& aphelios_ref) : apheli_os(aphelios_ref)
 {
+    shell_process = std::make_shared<Process>(0, "pts", apheli_os.memory);
 }
 
 void Shell::run(bool print_header)

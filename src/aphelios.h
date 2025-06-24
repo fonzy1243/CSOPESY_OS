@@ -10,6 +10,7 @@
 #include <string>
 #include "shell/shell.h"
 #include "scheduler/scheduler.h"
+#include "memory/memory.h"
 #include "session/session.h"
 
 class Shell;
@@ -17,6 +18,7 @@ class Shell;
 class ApheliOS {
 public:
     Scheduler scheduler;
+    std::shared_ptr<Memory> memory;
     std::vector<std::shared_ptr<Session>> sessions;
     std::shared_ptr<Session> current_session;
 

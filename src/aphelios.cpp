@@ -13,6 +13,7 @@
  ApheliOS::ApheliOS() : scheduler(4)
  {
      shell = std::make_unique<Shell>(*this);
+     memory = std::make_shared<Memory>();
      create_session("pts", true, shell->shell_process);
 
      ShellUtils::print_header(shell->output_buffer);
@@ -92,7 +93,7 @@ void ApheliOS::create_screen(const std::string &name)
          current_session->output_buffer = shell->output_buffer;
      }
 
-     auto new_process = std::make_shared<Process>(current_pid++, name);
+     auto new_process = std::make_shared<Process>(current_pid++, name, this->memory);
      create_session(name, false, new_process);
 
      shell->output_buffer.clear();

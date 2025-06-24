@@ -36,3 +36,14 @@ void Memory::clear()
 {
     std::fill(memory.begin(), memory.end(), 0);
 }
+
+size_t Memory::get_var_address(std::unordered_map<std::string, size_t> &symbol_table, const std::string &var_name)
+{
+    if (const auto it = symbol_table.find(var_name); it != symbol_table.end()) {
+        return it->second;
+    }
+
+    const size_t address = next_free_index += 2;
+
+    return address;
+}

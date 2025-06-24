@@ -16,7 +16,23 @@ std::string PrintInstruction::get_type_name() const
 
 void DeclareInstruction::execute(Process &process)
 {
+    size_t address = process.memory->get_var_address(process.symbol_table, var_name);
+    process.memory->write_word(address, value);
 
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+
+    localtime_s(&tm, &time_t);
+
+    std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"DECLARE {} = {}\"",
+        tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+        process.get_assigned_core(), var_name, value);
+
+    if (process.log_file.is_open()) {
+        process.log_file << log_entry << std::endl;
+        process.log_file.flush();
+    }
 }
 
 std::string DeclareInstruction::get_type_name() const

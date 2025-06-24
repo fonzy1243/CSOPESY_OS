@@ -10,8 +10,9 @@
 #include <chrono>
 #include <atomic>
 #include <thread>
-#include <map>
+#include <unordered_map>
 #include "instruction.h"
+#include "../memory/memory.h"
 
 class IInstruction;
 
@@ -37,9 +38,13 @@ public:
     std::chrono::system_clock::time_point start_time;
     std::chrono::system_clock::time_point end_time;
 
+    std::shared_ptr<Memory> memory;
+    std::unordered_map<std::string, size_t> symbol_table;
+
     std::ofstream log_file;
 
-    Process(const uint16_t id, const std::string &name);
+
+    Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory);
     ~Process();
 
     // For running arbitrary programs

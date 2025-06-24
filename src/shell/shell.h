@@ -14,9 +14,10 @@
 #include <ftxui/dom/elements.hpp>
 #include <random>
 
+#include "../aphelios.h"
 #include "../process/process.h"
-#include "../session/session.h"
 #include "../scheduler/scheduler.h"
+#include "../session/session.h"
 
 class ApheliOS;
 class Shell;
@@ -51,7 +52,7 @@ namespace ShellUtils {
 class Shell {
 public:
     ApheliOS& apheli_os;
-    std::shared_ptr<Process> shell_process = std::make_shared<Process>(0, "pts");
+    std::shared_ptr<Process> shell_process;
 
     // Marquee
     bool marquee_mode{false};

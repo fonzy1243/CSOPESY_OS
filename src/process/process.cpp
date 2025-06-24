@@ -82,3 +82,31 @@ std::string Process::get_status_string() const
 
     return "debug";
 }
+
+void Process::unroll_recursive(const std::vector<std::shared_ptr<IInstruction>> &to_expand,
+                               std::vector<std::shared_ptr<IInstruction>> &target_list)
+{
+    for (const auto& instruction : to_expand) {
+        if (auto for_inst = std::dynamic_pointer_cast<ForInstruction>(instruction)) {
+            for (uint16_t i = 0; i < for_inst->get_repeats(); i++) {
+                unroll_recursive(for_inst->get_sub_instructions(), target_list);
+            }
+        } else {
+            target_list.push_back(instruction);
+        }
+    }
+}
+
+void Process::unroll_instructions()
+{
+    if (instructions.empty()) {
+        return;
+    }
+
+    std::vector<std::shared_ptr<IInstruction>> expanded_list;
+    expanded_list.reserve(instructions.size() * 2);
+
+    unroll_recursive(instructions, expanded_list);
+
+    instructions = std::move(expanded_list);
+}

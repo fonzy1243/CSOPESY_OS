@@ -8,11 +8,6 @@
 
 void PrintInstruction::execute(Process &process)
 {
-    if (process.log_file.is_open()) {
-        process.log_file << message << "\n";
-        process.log_file.flush(); 
-    }
-
     process.output_buffer.push_back("[PRINT] " + message);
 }
 

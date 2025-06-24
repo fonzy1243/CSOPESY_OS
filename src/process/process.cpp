@@ -43,7 +43,7 @@ void Process::execute(uint16_t core_id)
     end_time = std::chrono::system_clock::now();
 }
 
-void Process::add_instruction(std::shared_ptr<Instruction> instruction)
+void Process::add_instruction(std::shared_ptr<IInstruction> instruction)
 {
     instructions.push_back(instruction);
 }
@@ -52,9 +52,6 @@ void Process::generate_print_instructions()
 {
     for (int i = 0; i < 100; ++i) {
         std::string message = std::format("Hello world from {}!", name);
-        auto print_instruction = std::make_shared<Instruction>(InstructionType::ePrint, message);
-
-        add_instruction(print_instruction);
     }
 }
 

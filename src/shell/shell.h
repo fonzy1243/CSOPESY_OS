@@ -11,9 +11,9 @@
 #endif
 
 #include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/dom/elements.hpp>
 #include <random>
 
-#include "../../cmake-build-release/_deps/ftxui-src/include/ftxui/dom/elements.hpp"
 #include "../process/process.h"
 #include "../session/session.h"
 #include "../scheduler/scheduler.h"

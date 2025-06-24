@@ -45,11 +45,9 @@ std::string SubtractInstruction::get_type_name() const
     return "SUBTRACT";
 }
 
-void SleepInstruction::execute(Process &process) {
-    uint64_t start_tick = get_cpu_tick();
-    while (get_cpu_tick() - start_tick < x) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
+void SleepInstruction::execute(Process &process)
+{
+
 }
 
 std::string SleepInstruction::get_type_name() const

@@ -29,18 +29,19 @@ Process::Process(const uint16_t id, const std::string &name) : id(id), name(name
     }
 }
 
-void Process::execute(uint16_t core_id)
+void Process::execute(uint16_t core_id, int max_instructions)
 {
     start_time = std::chrono::system_clock::now();
-
-    for (const auto instruction : instructions) {
-        instruction->execute(*this);
-
-        // Delay after each instruction, just for demo of week 6, remove after
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    int executed = 0;
+    while (current_instruction < (int)instructions.size() && (max_instructions < 0 || executed < max_instructions)) {
+        if (get_state() == ProcessState::eWaiting) break;
+        instructions[current_instruction]->execute(*this);
+        current_instruction++;
+        executed++;
     }
-
-    end_time = std::chrono::system_clock::now();
+    if (current_instruction >= (int)instructions.size()) {
+        end_time = std::chrono::system_clock::now();
+    }
 }
 
 void Process::add_instruction(std::shared_ptr<IInstruction> instruction)

@@ -32,6 +32,7 @@ public:
     std::atomic<int> current_instruction{0};
     std::atomic<ProcessState> current_state{ProcessState::eReady};
     std::atomic<uint16_t> assigned_core{9999};
+    std::atomic<uint64_t> sleep_until_tick{0};
 
     std::chrono::system_clock::time_point creation_time;
     std::chrono::system_clock::time_point start_time;
@@ -49,7 +50,7 @@ public:
         std::forward<F>(program)();
     }
 
-    void execute(uint16_t core_id);
+    void execute(uint16_t core_id, int max_instructions = -1);
     void add_instruction(std::shared_ptr<IInstruction> instruction);
     // For Week 6 homework
     void generate_print_instructions();

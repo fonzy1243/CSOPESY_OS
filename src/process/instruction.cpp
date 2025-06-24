@@ -2,6 +2,7 @@
 // Created by Alfon on 6/12/2025.
 //
 
+#include <iostream>
 #include "instruction.h"
 #include "../cpu_tick.h"
 
@@ -71,7 +72,16 @@ std::string SleepInstruction::get_type_name() const
     return "SLEEP";
 }
 
-void ForInstruction::execute(Process &process) {  }
+void ForInstruction::execute(Process &process)
+{
+    for (uint64_t i = 0; i < repeats; i++) {
+        for (const auto& instruction : sub_instructions) {
+            instruction->execute(process);
+        }
+    }
+    std::cerr << "FATAL ERROR in ForInstruction::execute: A ForInstruction was executed directly instead of being expanded. Program will terminate." << std::endl;
+    std::abort();
+}
 
 std::string ForInstruction::get_type_name() const
 {

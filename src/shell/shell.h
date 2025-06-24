@@ -18,6 +18,7 @@
 #include "../session/session.h"
 #include "../scheduler/scheduler.h"
 
+class ApheliOS;
 class Shell;
 
 namespace ShellUtils {
@@ -49,9 +50,7 @@ namespace ShellUtils {
 
 class Shell {
 public:
-    Scheduler scheduler{4};
-    std::vector<std::shared_ptr<Session>> sessions;
-    std::shared_ptr<Session> current_session;
+    ApheliOS& apheli_os;
     std::shared_ptr<Process> shell_process = std::make_shared<Process>(0, "pts");
 
     // Marquee
@@ -66,31 +65,16 @@ public:
     std::chrono::steady_clock::time_point last_marquee_update{std::chrono::steady_clock::now()};
     std::mt19937 marquee_rng{std::random_device{}()};
 
-    std::deque<std::string> last_console_output;
     std::deque<std::string> output_buffer;
     ftxui::ScreenInteractive screen = ftxui::ScreenInteractive::Fullscreen();
-
-
     bool exit_to_main_menu{false};
-    bool quit{false};
 
-    Shell();
+    explicit Shell(ApheliOS& aphelios_ref);
 
-    void run();
-
-    void create_screen(const std::string &name);
-    void switch_screen(const std::string &name);
-    void exit_screen();
+    void run(bool print_header);
 
 private:
-    uint16_t current_pid{0};
-    uint16_t current_sid{0};
-
-
-    // added an extra argument for processes
-    void create_session(const std::string &session_name, bool has_leader = false, std::shared_ptr<Process> process = nullptr);
-    void switch_session(const std::string &session_name);
-
+    void shell_loop(bool print_header);
 };
 
 #endif //SHELL_H

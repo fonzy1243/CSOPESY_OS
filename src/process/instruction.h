@@ -38,11 +38,20 @@ public:
 
 class AddInstruction : public IInstruction
 {
-    uint16_t val1;
-    uint16_t val2;
-    uint16_t val3;
+    std::string var1;
+    std::string var2;
+    std::string var3;
+
+    uint16_t val2 = 0;
+    uint16_t val3 = 0;
+
+    bool use_val2;
+    bool use_val3;
 public:
-    AddInstruction(const uint16_t val1, const uint16_t val2, const uint16_t val3) : val1(val1), val2(val2), val3(val3) {}
+    AddInstruction(const std::string& var1, const std::string& var2, const std::string& var3) : var1(var1), var2(var2), var3(var3), use_val2(false), use_val3(false) {}
+    AddInstruction(const std::string& var1, const std::string& var2, const uint16_t val3) : var1(var1), var2(var2), val3(val3), use_val2(false), use_val3(true) {}
+    AddInstruction(const std::string& var1, const uint16_t val2, const std::string& var3) : var1(var1), var3(var3), val2(val2), use_val2(true), use_val3(false) {}
+    AddInstruction(const std::string& var1, const uint16_t val2, const uint16_t val3) : var1(var1), val2(val2), val3(val3), use_val2(true), use_val3(true) {}
     void execute(Process& process) override;
     std::string get_type_name() const override;
 };

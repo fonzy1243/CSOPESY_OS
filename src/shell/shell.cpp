@@ -1,5 +1,6 @@
 #include "shell.h"
 #include "../aphelios.h"
+#include "../cpu_tick.h"
 
 #include <iostream>
 #include <format>
@@ -339,6 +340,7 @@ void Shell::shell_loop(bool print_header)
     auto loop = Loop(&screen, renderer);
 
     while (!apheli_os.quit) {
+        increment_cpu_tick();
         loop.RunOnce();
 
         if (marquee_mode) {

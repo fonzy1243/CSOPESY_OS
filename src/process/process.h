@@ -10,9 +10,10 @@
 #include <chrono>
 #include <atomic>
 #include <thread>
+#include <map>
 #include "instruction.h"
 
-class Instruction;
+class IInstruction;
 
 enum class ProcessState
 {
@@ -27,7 +28,7 @@ class Process
 public:
     uint16_t id;
     std::string name;
-    std::vector<std::shared_ptr<Instruction>> instructions;
+    std::vector<std::shared_ptr<IInstruction>> instructions;
     std::atomic<int> current_instruction{0};
     std::atomic<ProcessState> current_state{ProcessState::eReady};
     std::atomic<uint16_t> assigned_core{9999};
@@ -49,7 +50,7 @@ public:
     }
 
     void execute(uint16_t core_id);
-    void add_instruction(std::shared_ptr<Instruction> instruction);
+    void add_instruction(std::shared_ptr<IInstruction> instruction);
     // For Week 6 homework
     void generate_print_instructions();
 

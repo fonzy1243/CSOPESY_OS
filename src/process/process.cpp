@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <ranges>
 
-Process::Process(const uint16_t id, const std::string &name) : id(id), name(name)
+Process::Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory) : id(id), name(name), memory(memory)
  {
     creation_time = std::chrono::system_clock::now();
 

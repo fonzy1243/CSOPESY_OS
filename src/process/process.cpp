@@ -15,7 +15,9 @@ Process::Process(const uint16_t id, const std::string &name, const std::shared_p
     if (log_file.is_open()) {
         auto now = std::chrono::system_clock::now();
         auto time_t = std::chrono::system_clock::to_time_t(now);
-        auto tm = *std::localtime(&time_t);
+        std::tm tm{};
+
+        localtime_s(&tm, &time_t);
 
         log_file << std::format("Process name: {}\n", this->name);
         log_file << std::format("Logs:\n");

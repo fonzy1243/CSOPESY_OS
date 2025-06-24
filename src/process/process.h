@@ -11,9 +11,11 @@
 #include <atomic>
 #include <thread>
 #include <map>
+#include <deque>
 #include "instruction.h"
 
 class IInstruction;
+class Session;
 
 enum class ProcessState
 {
@@ -32,12 +34,15 @@ public:
     std::atomic<int> current_instruction{0};
     std::atomic<ProcessState> current_state{ProcessState::eReady};
     std::atomic<uint16_t> assigned_core{9999};
+    std::deque<std::string> output_buffer;
 
     std::chrono::system_clock::time_point creation_time;
     std::chrono::system_clock::time_point start_time;
     std::chrono::system_clock::time_point end_time;
 
     std::ofstream log_file;
+
+    std::shared_ptr<Session> session;
 
     Process(const uint16_t id, const std::string &name);
     ~Process();

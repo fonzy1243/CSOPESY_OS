@@ -292,6 +292,11 @@ void Shell::shell_loop(bool print_header)
 
         apheli_os.process_command(input);
 
+        if (apheli_os.current_session && apheli_os.current_session->process) {
+            output_buffer.insert(output_buffer.end(), apheli_os.current_session->process->output_buffer.begin(), apheli_os.current_session->process->output_buffer.end());
+            apheli_os.current_session->process->output_buffer.clear();
+        }
+
         input.clear();
 
         if (apheli_os.quit) {

@@ -3,10 +3,17 @@
 //
 
 #include "instruction.h"
+#include <fstream>
+
 
 void PrintInstruction::execute(Process &process)
 {
+    if (process.log_file.is_open()) {
+        process.log_file << message << "\n";
+        process.log_file.flush(); 
+    }
 
+    process.output_buffer.push_back("[PRINT] " + message);
 }
 
 std::string PrintInstruction::get_type_name() const

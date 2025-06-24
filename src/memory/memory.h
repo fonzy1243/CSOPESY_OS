@@ -5,6 +5,7 @@
 #ifndef MEMORY_H
 #define MEMORY_H
 #include <vector>
+#include <cstdint>
 
 
 class Memory {

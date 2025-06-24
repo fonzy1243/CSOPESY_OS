@@ -60,7 +60,7 @@ public:
 
 class SleepInstruction : public IInstruction
 {
-    uint8_t x;
+    uint8_t x; // Number of CPU ticks to sleep
 public:
     SleepInstruction(const uint8_t x) : x(x) {}
     void execute(Process& process) override;

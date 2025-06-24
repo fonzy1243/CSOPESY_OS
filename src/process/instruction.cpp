@@ -3,6 +3,7 @@
 //
 
 #include "instruction.h"
+#include "../cpu_tick.h"
 
 void PrintInstruction::execute(Process &process)
 {
@@ -60,7 +61,8 @@ std::string SubtractInstruction::get_type_name() const
     return "SUBTRACT";
 }
 
-void SleepInstruction::execute(Process &process) {
+void SleepInstruction::execute(Process &process)
+{
 
 }
 

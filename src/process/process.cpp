@@ -70,10 +70,7 @@ std::string Process::get_status_string() const
     }
 
     // formatting creation time
-    auto time_t_val = std::chrono::system_clock::to_time_t(creation_time);
-    std::stringstream ss;
-    ss << std::put_time(std::localtime(&time_t_val), "%Y-%m-%d %H:%M:%S");
-    std::string formatted_time = ss.str();
+    std::string formatted_time = std::format("{:%Y-%m-%d %H:%M:%S}", creation_time);
 
     if (state_str == "Finished") {
         return std::format("{:<12} ({})  {:<10} {:>3}/{:<3}", name, formatted_time, "Finished", current_instruction.load(), instructions.size());

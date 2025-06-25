@@ -11,6 +11,7 @@
 #include "shell/shell.h"
 #include "scheduler/scheduler.h"
 #include "session/session.h"
+#include "config/config_reader.h"
 
 class Shell;
 

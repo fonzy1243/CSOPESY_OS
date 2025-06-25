@@ -15,7 +15,7 @@ add_executable(CSOPESY_OS src/main.cpp
         src/scheduler/scheduler.h
         src/process/instruction.cpp
         src/process/instruction.h
-        src/ApheliOS.cpp
+        src/aphelios.cpp
         src/aphelios.h
         src/cpu_tick.cpp
         src/cpu_tick.h

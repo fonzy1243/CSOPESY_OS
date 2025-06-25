@@ -18,7 +18,9 @@ add_executable(CSOPESY_OS src/main.cpp
         src/ApheliOS.cpp
         src/aphelios.h
         src/memory/memory.cpp
-        src/memory/memory.h)
+        src/memory/memory.h
+        src/config/config_reader.h
+        src/config/config_reader.cpp)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(CSOPESY_OS PRIVATE -std=c++23)

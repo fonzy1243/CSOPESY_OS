@@ -63,6 +63,8 @@ void ApheliOS::process_command(const std::string &input_raw)
          shell->output_buffer.emplace_back("Utilization report saved to logs/csopesy-log.txt");
      } else if (command_lower == "smi") {
          display_smi();
+     } else if (command_lower == "process-smi") {
+         shell->output_buffer.push_back(current_session->process->get_smi_string());
      } else if (!command.empty()) {
          shell->output_buffer.push_back(std::format("{}: command not found", command));
      }

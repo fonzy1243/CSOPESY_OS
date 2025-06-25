@@ -59,6 +59,7 @@ void Process::generate_print_instructions()
 {
     for (int i = 0; i < 100; ++i) {
         std::string message = std::format("Hello world from {}!", name);
+        add_instruction(std::make_shared<PrintInstruction>(message));
     }
 }
 
@@ -96,4 +97,24 @@ std::string Process::get_status_string() const
     }
 
     return "debug";
+}
+
+std::string Process::get_smi_string() const
+{
+    std::ostringstream out;
+
+    out << std::format("Process name: {}\n", name);
+    out << std::format("ID: {}\n", id);
+
+    if (current_state == ProcessState::eFinished)
+        out << "Status: Finished!\n";
+
+    out << "Logs:\n";
+    for (const auto &log: print_logs)
+        out << "  " << log << "\n";
+
+    out << std::format("Current instruction line: {}\n", current_instruction.load());
+    out << std::format("Lines of code: {}\n", instructions.size());
+
+    return out.str();
 }

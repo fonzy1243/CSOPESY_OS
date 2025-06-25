@@ -1,5 +1,6 @@
 #include "shell.h"
 #include "../aphelios.h"
+#include "../cpu_tick.h"
 
 #include <iostream>
 #include <format>
@@ -344,6 +345,7 @@ void Shell::shell_loop(bool print_header)
     auto loop = Loop(&screen, renderer);
 
     while (!apheli_os.quit) {
+        increment_cpu_tick();
         loop.RunOnce();
 
         if (marquee_mode) {
@@ -428,6 +430,7 @@ ftxui::Element ShellUtils::create_marquee_display(Shell &shell)
 
 Shell::Shell(ApheliOS& aphelios_ref) : apheli_os(aphelios_ref)
 {
+    shell_process = std::make_shared<Process>(0, "pts", apheli_os.memory);
 }
 
 void Shell::run(bool print_header)

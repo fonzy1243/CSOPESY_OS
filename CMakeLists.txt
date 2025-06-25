@@ -17,6 +17,8 @@ add_executable(CSOPESY_OS src/main.cpp
         src/process/instruction.h
         src/ApheliOS.cpp
         src/aphelios.h
+        src/cpu_tick.cpp
+        src/cpu_tick.h
         src/memory/memory.cpp
         src/memory/memory.h
         src/config/config_reader.h

@@ -24,8 +24,6 @@ class Shell;
 
 namespace ShellUtils {
     void clear_screen();
-    std::string convert_attributes_to_ansi(WORD attributes, WORD& current_screen_attributes);
-    std::string get_console_output();
     constexpr std::string_view ascii_art_name = R"(
                         ,,                 ,,    ,,
       db              `7MM               `7MM    db   .g8""8q.    .M"""bgd

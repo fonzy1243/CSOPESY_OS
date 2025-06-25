@@ -10,11 +10,14 @@
 #include <chrono>
 #include <atomic>
 #include <thread>
+#include <map>
+#include <deque>
 #include <unordered_map>
 #include "instruction.h"
 #include "../memory/memory.h"
 
 class IInstruction;
+class Session;
 
 enum class ProcessState
 {
@@ -33,6 +36,7 @@ public:
     std::atomic<int> current_instruction{0};
     std::atomic<ProcessState> current_state{ProcessState::eReady};
     std::atomic<uint16_t> assigned_core{9999};
+    std::deque<std::string> output_buffer;
     std::atomic<uint64_t> sleep_until_tick{0};
 
     std::chrono::system_clock::time_point creation_time;
@@ -40,10 +44,10 @@ public:
     std::chrono::system_clock::time_point end_time;
 
     std::shared_ptr<Memory> memory;
+    std::shared_ptr<Session> session;
     std::unordered_map<std::string, size_t> symbol_table;
 
     std::ofstream log_file;
-
 
     Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory);
     ~Process();

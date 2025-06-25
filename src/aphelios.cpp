@@ -10,6 +10,7 @@
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/table.hpp>
 
+
  ApheliOS::ApheliOS() : scheduler(4)
  {
      shell = std::make_unique<Shell>(*this);
@@ -22,6 +23,7 @@
 
 void ApheliOS::run()
  {
+     scheduler.start();
      shell->run(true);
  }
 
@@ -95,6 +97,8 @@ void ApheliOS::create_screen(const std::string &name)
 
      auto new_process = std::make_shared<Process>(current_pid++, name, this->memory);
      create_session(name, false, new_process);
+     scheduler.add_process(new_process);
+
 
      shell->output_buffer.clear();
 
@@ -140,6 +144,8 @@ void ApheliOS::create_session(const std::string &session_name, bool has_leader, 
      new_session->createTime = std::chrono::zoned_time{std::chrono::current_zone(), now_seconds};
 
      new_session->process = process;
+     process->session = new_session;
+
 
      sessions.push_back(new_session);
      current_session = new_session;

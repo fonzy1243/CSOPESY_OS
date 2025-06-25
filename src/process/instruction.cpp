@@ -3,11 +3,12 @@
 //
 
 #include "instruction.h"
+#include <fstream>
 #include "../cpu_tick.h"
 
 void PrintInstruction::execute(Process &process)
 {
-
+    process.output_buffer.push_back("[PRINT] " + message);
 }
 
 std::string PrintInstruction::get_type_name() const

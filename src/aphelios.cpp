@@ -42,6 +42,20 @@ void ApheliOS::process_command(const std::string &input_raw)
 
      bool is_initial_shell = !current_session || current_session->name == "pts";
 
+     if (command_lower == "initialize") {
+         if (initialized) {
+             shell->output_buffer.emplace_back("ApheliOS already initialized.");
+         } else {
+             initialize();
+         }
+         return;
+     }
+
+     if (!is_initialized() && command_lower != "initialize" && command_lower != "exit") {
+         shell->output_buffer.emplace_back("Error: ApheliOS is not initialized.");
+         return;
+     }
+
      if (command_lower == "exit") {
          if (is_initial_shell) {
              this->quit = true;

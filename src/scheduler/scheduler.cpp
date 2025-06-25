@@ -5,6 +5,7 @@
 #include <format>
 #include <filesystem>
 #include "scheduler.h"
+#include "../cpu_tick.h"
 
  Scheduler::Scheduler(uint16_t num_cores) : num_cores(num_cores)
  {
@@ -101,7 +102,18 @@ void Scheduler::cpu_worker(uint16_t core_id)
          }
 
          if (process_to_run) {
-             process_to_run->execute(core_id);
+             bool finished = false;
+             if (scheduler_type == SchedulerType::FCFS) {
+                 process_to_run->execute(core_id);
+                 finished = true;
+             } else if (scheduler_type == SchedulerType::RR) {
+                 int before = process_to_run->current_instruction.load();
+                 process_to_run->execute(core_id, quantum_cycles);
+                 int after = process_to_run->current_instruction.load();
+                 if (after >= (int)process_to_run->instructions.size()) {
+                     finished = true;
+                 }
+             }
 
              {
                  std::lock_guard running_lock(running_mutex);
@@ -113,8 +125,22 @@ void Scheduler::cpu_worker(uint16_t core_id)
                      running_processes.erase(it);
                  }
 
-                 process_to_run->set_state(ProcessState::eFinished);
-                 finished_processes.push_back(process_to_run);
+                 if (finished) {
+                     process_to_run->set_state(ProcessState::eFinished);
+                     finished_processes.push_back(process_to_run);
+                 } else if (process_to_run->get_state() == ProcessState::eWaiting) {
+                     // Still waiting (e.g., sleeping), keep in running_processes
+                     process_to_run->set_assigned_core(9999);
+                     running_processes.push_back(process_to_run);
+                 } else {
+                     // Preempted, move back to ready queue
+                     process_to_run->set_assigned_core(9999);
+                     process_to_run->set_state(ProcessState::eReady);
+                     {
+                         std::lock_guard lock(ready_mutex);
+                         ready_queue.push(process_to_run);
+                     }
+                 }
              }
          }
      }

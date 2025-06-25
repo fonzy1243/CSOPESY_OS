@@ -15,6 +15,8 @@
 #include <format>
 #include "../process/process.h"
 
+enum class SchedulerType { FCFS, RR };
+
 class Scheduler {
 private:
     std::queue<std::shared_ptr<Process>> ready_queue;
@@ -34,6 +36,9 @@ private:
     std::vector<std::thread> cpu_threads;
     std::thread scheduler_thread;
 
+    uint32_t quantum_cycles = 1;
+    SchedulerType scheduler_type = SchedulerType::FCFS;
+
     void scheduler_loop();
     void cpu_worker(uint16_t core_id);
 
@@ -52,6 +57,11 @@ public:
     bool is_running() const { return running.load(); }
 
     std::string get_status_string();
+
+    void set_quantum_cycles(uint32_t q) { quantum_cycles = q; }
+    void set_scheduler_type(SchedulerType t) { scheduler_type = t; }
+    uint32_t get_quantum_cycles() const { return quantum_cycles; }
+    SchedulerType get_scheduler_type() const { return scheduler_type; }
 };
 
 #endif //SCHEDULER_H

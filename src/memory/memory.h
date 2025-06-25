@@ -4,8 +4,11 @@
 
 #ifndef MEMORY_H
 #define MEMORY_H
+
+#include <string>
 #include <vector>
 #include <cstdint>
+#include <unordered_map>
 
 
 class Memory {
@@ -24,6 +27,9 @@ public:
     size_t size() const { return memory.size(); }
 
     const uint8_t* data() const { return memory.data(); }
+
+    // Fetch variable from memory or store if it is not yet stored.
+    size_t get_var_address(std::unordered_map<std::string, size_t>& symbol_table, const std::string& var_name);
 };
 
 

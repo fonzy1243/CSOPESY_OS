@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <ranges>
 
-Process::Process(const uint16_t id, const std::string &name) : id(id), name(name)
+Process::Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory) : id(id), name(name), memory(memory)
  {
     creation_time = std::chrono::system_clock::now();
 
@@ -13,11 +13,17 @@ Process::Process(const uint16_t id, const std::string &name) : id(id), name(name
     log_file.open(log_filename, std::ios::out | std::ios::trunc);
 
     if (log_file.is_open()) {
-        auto now = std::chrono::system_clock::now();
-        auto time_t = std::chrono::system_clock::to_time_t(now);
-        auto tm = *std::localtime(&time_t);
+        auto time_t = std::chrono::system_clock::to_time_t(creation_time);
+        std::tm tm{};
+
+        localtime_s(&tm, &time_t);
+
+        std::stringstream ss;
+        ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+        std::string formatted_time = ss.str();
 
         log_file << std::format("Process name: {}\n", this->name);
+        log_file << std::format("Time created: {}", formatted_time);
         log_file << std::format("Logs:\n");
     }
  }
@@ -29,18 +35,19 @@ Process::Process(const uint16_t id, const std::string &name) : id(id), name(name
     }
 }
 
-void Process::execute(uint16_t core_id)
+void Process::execute(uint16_t core_id, int max_instructions)
 {
     start_time = std::chrono::system_clock::now();
-
-    for (const auto instruction : instructions) {
-        instruction->execute(*this);
-
-        // Delay after each instruction, just for demo of week 6, remove after
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    int executed = 0;
+    while (current_instruction < (int)instructions.size() && (max_instructions < 0 || executed < max_instructions)) {
+        if (get_state() == ProcessState::eWaiting) break;
+        instructions[current_instruction]->execute(*this);
+        current_instruction++;
+        executed++;
     }
-
-    end_time = std::chrono::system_clock::now();
+    if (current_instruction >= (int)instructions.size()) {
+        end_time = std::chrono::system_clock::now();
+    }
 }
 
 void Process::add_instruction(std::shared_ptr<IInstruction> instruction)
@@ -66,18 +73,26 @@ std::string Process::get_status_string() const
         case ProcessState::eFinished: state_str = "Finished"; break;
     }
 
-    // formatting creation time
-    auto time_t_val = std::chrono::system_clock::to_time_t(creation_time);
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+
+    localtime_s(&tm, &time_t);
+
     std::stringstream ss;
-    ss << std::put_time(std::localtime(&time_t_val), "%Y-%m-%d %H:%M:%S");
+    ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
     std::string formatted_time = ss.str();
 
     if (state_str == "Finished") {
-        return std::format("{:<12} ({})  {:<10} {:>3}/{:<3}", name, formatted_time, "Finished", current_instruction.load(), instructions.size());
+        return std::format("{:<12} ({})  {:<10} {:>3}/{:<3}",
+                        name, formatted_time, "Finished",
+                        current_instruction.load(), instructions.size());
     }
     if (state_str == "Running") {
         std::string core_info = std::format("Core: {}", assigned_core.load());
-        return std::format("{:<12} ({})  {:<10} {:>3}/{:<3}", name, formatted_time, core_info, current_instruction.load(), instructions.size());
+            return std::format("{:<12} ({})  {:<10} {:>3}/{:<3}",
+                        name, formatted_time, core_info,
+                        current_instruction.load(), instructions.size());
     }
 
     return "debug";

@@ -17,7 +17,7 @@ class Shell;
 
 class ApheliOS {
 public:
-    Scheduler scheduler;
+    std::unique_ptr<Scheduler> scheduler;
     std::vector<std::shared_ptr<Session>> sessions;
     std::shared_ptr<Session> current_session;
 

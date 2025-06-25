@@ -31,7 +31,11 @@ public:
     void run();
 
     void process_command(const std::string& input);
+    bool is_initialized() const { return initialized; }
+    bool initialize(const std::string& config_file = "config.txt");
 private:
+    std::optional<CPUConfig> config;
+    bool initialized{false};
     uint16_t current_pid{0};
     uint16_t current_sid{0};
 

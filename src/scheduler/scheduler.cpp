@@ -79,6 +79,9 @@ void Scheduler::scheduler_loop()
 void Scheduler::add_process(std::shared_ptr<Process> process)
  {
      std::lock_guard lock(ready_mutex);
+
+     process->unroll_instructions();
+
      ready_queue.push(process);
      process->set_state(ProcessState::eReady);
      scheduler_cv.notify_one();

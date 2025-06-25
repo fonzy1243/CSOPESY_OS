@@ -15,12 +15,14 @@ add_executable(CSOPESY_OS src/main.cpp
         src/scheduler/scheduler.h
         src/process/instruction.cpp
         src/process/instruction.h
-        src/ApheliOS.cpp
+        src/aphelios.cpp
         src/aphelios.h
         src/cpu_tick.cpp
         src/cpu_tick.h
         src/memory/memory.cpp
-        src/memory/memory.h)
+        src/memory/memory.h
+        src/config/config_reader.h
+        src/config/config_reader.cpp)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(CSOPESY_OS PRIVATE -std=c++23)
@@ -37,6 +39,10 @@ FetchContent_Declare(ftxui
         GIT_TAG v6.1.9
 )
 FetchContent_MakeAvailable(ftxui)
+
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.txt
+        ${CMAKE_CURRENT_BINARY_DIR}/config.txt
+        COPYONLY)
 
 target_link_libraries(CSOPESY_OS PRIVATE
         # Chose a submodule

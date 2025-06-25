@@ -12,13 +12,15 @@
 #include "scheduler/scheduler.h"
 #include "memory/memory.h"
 #include "session/session.h"
+#include "config/config_reader.h"
 
 class Shell;
 
 class ApheliOS {
 public:
-    Scheduler scheduler;
+    std::unique_ptr<Scheduler> scheduler;
     std::shared_ptr<Memory> memory;
+  
     std::vector<std::shared_ptr<Session>> sessions;
     std::shared_ptr<Session> current_session;
 
@@ -32,7 +34,11 @@ public:
     void run();
 
     void process_command(const std::string& input);
+    bool is_initialized() const { return initialized; }
+    bool initialize(const std::string& config_file = "config.txt");
 private:
+    std::optional<CPUConfig> config;
+    bool initialized{false};
     uint16_t current_pid{0};
     uint16_t current_sid{0};
 

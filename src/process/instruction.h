@@ -5,7 +5,6 @@
 #ifndef INSTRUCTION_H
 #define INSTRUCTION_H
 
-#include <format>
 #include "process.h"
 
 class Process;
@@ -91,7 +90,9 @@ class ForInstruction : public IInstruction
     uint16_t repeats;
 public:
     ForInstruction(const std::vector<std::shared_ptr<IInstruction>> &instructions, const uint16_t repeats) : sub_instructions(instructions), repeats(repeats) {}
-    void execute(Process& process) override;
+    void execute(Process &process) override;
+    std::vector<std::shared_ptr<IInstruction>> &get_sub_instructions() { return sub_instructions; }
+    uint16_t get_repeats() const { return repeats; }
     std::string get_type_name() const override;
 };
 

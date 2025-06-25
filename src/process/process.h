@@ -63,6 +63,7 @@ public:
     void add_instruction(std::shared_ptr<IInstruction> instruction);
     // For Week 6 homework
     void generate_print_instructions();
+    void unroll_instructions();
 
     ProcessState get_state() const { return current_state.load(); }
     void set_state(const ProcessState state) { current_state.store(state); }
@@ -75,6 +76,8 @@ public:
 private:
     std::weak_ptr<Process> parent;
     std::vector<std::shared_ptr<Process>> children;
+
+    void unroll_recursive(const std::vector<std::shared_ptr<IInstruction>>& to_expand, std::vector<std::shared_ptr<IInstruction>>& target_list);
 };
 
 #endif //PROCESS_H

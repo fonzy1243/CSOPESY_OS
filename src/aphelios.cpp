@@ -72,7 +72,7 @@ void ApheliOS::process_command(const std::string &input_raw)
      } else if (command_lower == "marquee") {
          ShellUtils::toggle_marquee_mode(*shell);
      } else if (command_lower == "report-util") {
-         scheduler.write_utilization_report();
+         scheduler->write_utilization_report();
          shell->output_buffer.emplace_back("Utilization report saved to logs/csopesy-log.txt");
      } else if (command_lower == "smi") {
          display_smi();
@@ -129,7 +129,7 @@ void ApheliOS::handle_screen_cmd(const std::string &input)
      } else if (args[0] == "-r" && args.size() > 1) {
          switch_screen(std::string(args[1]));
      } else if (args[0] == "-ls") {
-         std::string status = scheduler.get_status_string();
+         std::string status = scheduler->get_status_string();
          shell->output_buffer.emplace_back(status);
      }
  }
@@ -146,7 +146,7 @@ void ApheliOS::create_screen(const std::string &name)
      auto print_instr = std::make_shared<PrintInstruction>(msg);
      new_process->add_instruction(print_instr);
      create_session(name, false, new_process);
-     scheduler.add_process(new_process);
+     scheduler->add_process(new_process);
 
 
      shell->output_buffer.clear();

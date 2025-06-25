@@ -4,7 +4,6 @@
 
 #include <iostream>
 #include <format>
-#include <print>
 #include <ranges>
 #include <string>
 #include <cassert>

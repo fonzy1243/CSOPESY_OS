@@ -1,1 +1,1 @@
-#ApheliOS [![CMake on a single platform](https://github.com/fonzy1243/CSOPESY_OS/actions/workflows/cmake-single-platform.yml/badge.svg)](https://github.com/fonzy1243/CSOPESY_OS/actions/workflows/cmake-single-platform.yml)
+# ApheliOS [![CMake on a single platform](https://github.com/fonzy1243/CSOPESY_OS/actions/workflows/cmake-single-platform.yml/badge.svg)](https://github.com/fonzy1243/CSOPESY_OS/actions/workflows/cmake-single-platform.yml)

@@ -10,8 +10,6 @@
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/table.hpp>
 
-#include "shell/shell.h"
-std::unique_ptr<Shell> shell;
 
  ApheliOS::ApheliOS() : scheduler(4)
  {
@@ -97,9 +95,6 @@ void ApheliOS::create_screen(const std::string &name)
      }
 
      auto new_process = std::make_shared<Process>(current_pid++, name);
-     auto msg = std::format("Hello world from {}", new_process->name);
-     auto print_instr = std::make_shared<PrintInstruction>(msg);
-     new_process->add_instruction(print_instr);
      create_session(name, false, new_process);
      scheduler.add_process(new_process);
 

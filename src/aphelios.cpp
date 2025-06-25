@@ -13,18 +13,16 @@
 #include "shell/shell.h"
 std::unique_ptr<Shell> shell;
 
- ApheliOS::ApheliOS() : scheduler(4)
+ ApheliOS::ApheliOS()
  {
      shell = std::make_unique<Shell>(*this);
      create_session("pts", true, shell->shell_process);
-
      ShellUtils::print_header(shell->output_buffer);
      current_session->output_buffer = shell->output_buffer;
  }
 
 void ApheliOS::run()
  {
-     scheduler.start();
      shell->run(true);
  }
 
@@ -67,6 +65,39 @@ void ApheliOS::process_command(const std::string &input_raw)
      } else if (!command.empty()) {
          shell->output_buffer.push_back(std::format("{}: command not found", command));
      }
+ }
+
+bool ApheliOS::initialize(const std::string& config_file)
+ {
+     ConfigReader reader;
+
+     auto load_result = reader.load_file(config_file);
+     if (!load_result) {
+         shell->output_buffer.emplace_back(std::format("Failed to load config file '{}': {}", config_file, load_result.error()));
+         return false;
+     }
+
+     auto config_result = reader.parse_config();
+     if (!config_result) {
+         shell->output_buffer.emplace_back(std::format("Error: Invalid configuration - {}", config_result.error()));
+         return false;
+     }
+
+     config = *config_result;
+
+     scheduler = std::make_unique<Scheduler>(config->num_cpu);
+     scheduler->start();
+
+     initialized = true;
+
+     shell->output_buffer.emplace_back("Initialize command done.");
+     shell->output_buffer.emplace_back(std::format("Configuration loaded successfully:"));
+     shell->output_buffer.emplace_back(std::format("  CPUs: {}", config->num_cpu));
+     shell->output_buffer.emplace_back(std::format("  Scheduler: {}", config->scheduler));
+     shell->output_buffer.emplace_back(std::format("  Quantum: {}", config->quantum_cycles));
+     shell->output_buffer.emplace_back(std::format("  Min/Max Instructions: {}/{}", config->min_ins, config->max_ins));
+
+     return true;
  }
 
 void ApheliOS::handle_screen_cmd(const std::string &input)

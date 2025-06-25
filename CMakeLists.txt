@@ -38,6 +38,10 @@ FetchContent_Declare(ftxui
 )
 FetchContent_MakeAvailable(ftxui)
 
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.txt
+        ${CMAKE_CURRENT_BINARY_DIR}/config.txt
+        COPYONLY)
+
 target_link_libraries(CSOPESY_OS PRIVATE
         # Chose a submodule
         ftxui::component

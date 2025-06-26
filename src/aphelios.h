@@ -22,6 +22,9 @@ class ApheliOS {
 public:
     std::unique_ptr<Scheduler> scheduler;
     std::shared_ptr<Memory> memory;
+
+    std::atomic<bool> running;
+    std::thread cpu_clock_thread;
   
     std::vector<std::shared_ptr<Session>> sessions;
     std::shared_ptr<Session> current_session;
@@ -43,6 +46,8 @@ private:
     bool initialized{false};
     uint16_t current_pid{0};
     uint16_t current_sid{0};
+
+    void run_system_clock();
     
     // Process generation
     std::atomic<bool> scheduler_generating_processes{false};

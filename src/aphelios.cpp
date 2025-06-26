@@ -1,16 +1,14 @@
-//
-// Created by Alfon on 6/24/2025.
-//
-
 #include "aphelios.h"
 
-#include <ranges>
 #include <cassert>
-#include <random>
 #include <chrono>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/table.hpp>
+#include <random>
+#include <ranges>
+
+#include "cpu_tick.h"
 #include "process/instruction.h"
 
 
@@ -25,8 +23,22 @@
 
 ApheliOS::~ApheliOS()
 {
-    stop_process_generation();
+     running.store(false);
+
+     stop_process_generation();
+
+     if (cpu_clock_thread.joinable()) {
+         cpu_clock_thread.join();
+     }
 }
+
+void ApheliOS::run_system_clock()
+ {
+     while (running.load()) {
+         increment_cpu_tick();
+     }
+ }
+
 
 void ApheliOS::run()
  {
@@ -122,7 +134,11 @@ bool ApheliOS::initialize(const std::string& config_file)
 
      config = *config_result;
 
-         scheduler = std::make_unique<Scheduler>(config->num_cpu);
+     scheduler = std::make_unique<Scheduler>(config->num_cpu);
+
+     running.store(true);
+
+     cpu_clock_thread = std::thread(&ApheliOS::run_system_clock, this);
     
     // Configure scheduler type
     if (config->scheduler == "fcfs") {

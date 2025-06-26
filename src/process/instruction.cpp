@@ -9,6 +9,20 @@
 
 void PrintInstruction::execute(Process &process)
 {
+    uint16_t core_id = process.assigned_core.load();
+
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm;
+    localtime_s(&tm, &time_t);
+
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%m/%d/%Y %I:%M:%S%p");
+    std::string timestamp = oss.str();
+
+
+    std::string log_entry = std::format("({}) Core {}: \"{}\"", timestamp, core_id, message);
+    process.print_logs.push_back(log_entry);
     process.output_buffer.push_back("[PRINT] " + message);
 }
 

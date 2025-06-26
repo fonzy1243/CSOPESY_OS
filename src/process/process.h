@@ -33,6 +33,7 @@ public:
     uint16_t id;
     std::string name;
     std::vector<std::shared_ptr<IInstruction>> instructions;
+    std::vector<std::string> print_logs;
     std::atomic<int> current_instruction{0};
     std::atomic<ProcessState> current_state{ProcessState::eReady};
     std::atomic<uint16_t> assigned_core{9999};
@@ -72,6 +73,8 @@ public:
     void set_assigned_core(const uint16_t core_id) { assigned_core.store(core_id); }
 
     std::string get_status_string() const;
+
+    std::string get_smi_string() const;
 
 private:
     std::weak_ptr<Process> parent;

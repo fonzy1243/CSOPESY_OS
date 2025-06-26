@@ -77,7 +77,7 @@ void Scheduler::scheduler_loop()
 
          std::unique_lock ready_lock(ready_mutex);
 
-         if (scheduler_cv.wait_for(ready_lock, std::chrono::milliseconds(500), [this] {
+         if (scheduler_cv.wait_for(ready_lock, std::chrono::milliseconds(1), [this] {
              return !ready_queue.empty() || !running.load();
          })) {
              if (!running.load()) break;

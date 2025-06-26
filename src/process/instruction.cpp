@@ -16,13 +16,11 @@ void PrintInstruction::execute(Process &process)
     std::tm tm;
     localtime_s(&tm, &time_t);
 
-    std::ostringstream oss;
-    oss << std::put_time(&tm, "%m/%d/%Y %I:%M:%S%p");
-    std::string timestamp = oss.str();
-
-
-    std::string log_entry = std::format("({}) Core {}: \"{}\"", timestamp, core_id, message);
+    std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"PRINT {}\"",
+        tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+        core_id, message);
     process.print_logs.push_back(log_entry);
+
     process.output_buffer.push_back("[PRINT] " + message);
 }
 
@@ -33,6 +31,8 @@ std::string PrintInstruction::get_type_name() const
 
 void DeclareInstruction::execute(Process &process)
 {
+    uint16_t core_id = process.assigned_core.load();
+
     size_t address = process.memory->get_var_address(process.symbol_table, var_name);
     process.memory->write_word(address, value);
 
@@ -44,10 +44,10 @@ void DeclareInstruction::execute(Process &process)
 
     std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"DECLARE {} = {}\"",
         tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
-        process.get_assigned_core(), var_name, value);
+        core_id, var_name, value);
 
-    // Add to output buffer for viewing
-    // process.output_buffer.push_back(log_entry);
+    // Add to print log for viewing with process-smi
+    process.print_logs.push_back(log_entry);
 
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;
@@ -62,6 +62,7 @@ std::string DeclareInstruction::get_type_name() const
 
 void AddInstruction::execute(Process &process)
 {
+    uint16_t core_id = process.assigned_core.load();
     size_t var1_address = process.memory->get_var_address(process.symbol_table, var1);
 
     std::string val2_str, val3_str;
@@ -97,10 +98,10 @@ void AddInstruction::execute(Process &process)
 
     std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"ADD {} = {} + {} = {}\"",
     tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
-    process.get_assigned_core(), var1, val2_str, val3_str, static_cast<uint16_t>(result));
+    core_id, var1, val2_str, val3_str, static_cast<uint16_t>(result));
 
-    // Add to output buffer for viewing
-    // process.output_buffer.push_back(log_entry);
+    // Add to print_logs for viewing
+    process.print_logs.push_back(log_entry);
 
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;
@@ -115,6 +116,7 @@ std::string AddInstruction::get_type_name() const
 
 void SubtractInstruction::execute(Process &process)
 {
+    uint16_t core_id = process.assigned_core.load();
     size_t var1_address = process.memory->get_var_address(process.symbol_table, var1);
 
     std::string val2_str, val3_str;
@@ -152,10 +154,10 @@ void SubtractInstruction::execute(Process &process)
 
     std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"SUBTRACT {} = {} - {} = {}\"",
      tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
-     process.get_assigned_core(), var1, val2_str, val3_str, result);
+     core_id, var1, val2_str, val3_str, result);
 
-    // Add to output buffer for viewing
-    // process.output_buffer.push_back(log_entry);
+    // Add to print_logs for viewing
+    process.print_logs.push_back(log_entry);
 
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;
@@ -170,6 +172,7 @@ std::string SubtractInstruction::get_type_name() const
 
 void SleepInstruction::execute(Process &process)
 {
+    uint16_t core_id = process.assigned_core.load();
     uint32_t sleep_start = get_cpu_tick();
     uint32_t sleep_until = sleep_start + x;
     process.set_state(ProcessState::eWaiting);
@@ -183,10 +186,10 @@ void SleepInstruction::execute(Process &process)
 
     std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"SLEEP  start: {} end: {}\"",
      tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
-     process.get_assigned_core(), sleep_start, sleep_until);
+     core_id, sleep_start, sleep_until);
 
-    // Add to output buffer for viewing
-    // process.output_buffer.push_back(log_entry);
+    // Add to print logs for viewing
+    process.print_logs.push_back(log_entry);
 }
 
 std::string SleepInstruction::get_type_name() const

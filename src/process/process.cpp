@@ -56,9 +56,9 @@ void Process::execute(uint16_t core_id, uint32_t quantum, uint32_t delay)
 
         ticks_executed++;
 
-        if (current_tick % (delay + 1) == 0) {
+        if (ticks_executed % (delay + 1) == 0) {
             instructions[current_instruction]->execute(*this);
-            current_instruction++;
+            ++current_instruction;
         }
 
         if (get_state() == ProcessState::eWaiting) break;

@@ -137,22 +137,24 @@ void Scheduler::cpu_worker(uint16_t core_id)
                  std::erase(running_processes, process_to_run);
              }
 
-             process_to_run->set_assigned_core(9999);
 
              const bool finished = (process_to_run->current_instruction.load() >= (int)process_to_run->instructions.size());
 
              if (finished) {
                  process_to_run->set_state(ProcessState::eFinished);
                  std::lock_guard finished_lock(finished_mutex);
+                 process_to_run->set_assigned_core(9999);
                  finished_processes.push_back(process_to_run);
              } else if (process_to_run->get_state() == ProcessState::eWaiting) {
                  // Still waiting (e.g., sleeping), keep in running_processes
                  std::lock_guard waiting_lock(waiting_mutex);
+                 process_to_run->set_assigned_core(9999);
                  waiting_queue.push(process_to_run);
              } else {
                  // Preempted due to quantum expiration, move back to ready queue
                  process_to_run->set_state(ProcessState::eReady);
                  std::lock_guard lock(ready_mutex);
+                 process_to_run->set_assigned_core(9999);
                  ready_queue.push(process_to_run);
                  scheduler_cv.notify_one();
              }

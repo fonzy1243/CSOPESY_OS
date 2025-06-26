@@ -35,6 +35,7 @@ ApheliOS::~ApheliOS()
 void ApheliOS::run_system_clock()
  {
      while (running.load()) {
+         std::this_thread::sleep_for(std::chrono::milliseconds(10));
          increment_cpu_tick();
      }
  }

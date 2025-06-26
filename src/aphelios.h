@@ -8,6 +8,8 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <thread>
+#include <atomic>
 #include "shell/shell.h"
 #include "scheduler/scheduler.h"
 #include "memory/memory.h"
@@ -29,7 +31,7 @@ public:
     bool quit{false};
 
     ApheliOS();
-    ~ApheliOS() = default;
+    ~ApheliOS();
 
     void run();
 
@@ -41,6 +43,11 @@ private:
     bool initialized{false};
     uint16_t current_pid{0};
     uint16_t current_sid{0};
+    
+    // Process generation
+    std::atomic<bool> scheduler_generating_processes{false};
+    std::thread process_generation_thread;
+    uint16_t process_counter{1};
 
     void create_screen(const std::string& name);
     void switch_screen(const std::string& name);
@@ -50,6 +57,10 @@ private:
 
     void handle_screen_cmd(const std::string& input);
     void display_smi();
+    
+    void start_process_generation();
+    void stop_process_generation();
+    void process_generation_worker();
 };
 
 

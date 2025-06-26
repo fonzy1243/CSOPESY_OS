@@ -106,14 +106,34 @@ void Scheduler::cpu_worker(uint16_t core_id)
 
          if (process_to_run) {
              bool finished = false;
+             bool preempted = false;
+             
              if (scheduler_type == SchedulerType::FCFS) {
                  process_to_run->execute(core_id);
                  finished = true;
              } else if (scheduler_type == SchedulerType::RR) {
-                 int before = process_to_run->current_instruction.load();
+                 // Round Robin: Run for quantum_cycles instructions
+                 int instructions_before = process_to_run->current_instruction.load();
+                 
+                 // Execute for the specified quantum
                  process_to_run->execute(core_id, quantum_cycles);
-                 int after = process_to_run->current_instruction.load();
-                 if (after >= (int)process_to_run->instructions.size()) {
+                 
+                 int instructions_after = process_to_run->current_instruction.load();
+                 
+                 // Check if process finished
+                 if (instructions_after >= (int)process_to_run->instructions.size()) {
+                     finished = true;
+                 } 
+                 // Check if process is waiting (e.g., sleeping)
+                 else if (process_to_run->get_state() == ProcessState::eWaiting) {
+                     // Process is waiting, don't preempt
+                     preempted = false;
+                 }
+                 // Check if quantum was used up (preemption needed)
+                 else if (instructions_after - instructions_before >= quantum_cycles) {
+                     preempted = true;
+                 } else {
+                     // Process finished before quantum expired
                      finished = true;
                  }
              }
@@ -135,16 +155,20 @@ void Scheduler::cpu_worker(uint16_t core_id)
                      // Still waiting (e.g., sleeping), keep in running_processes
                      process_to_run->set_assigned_core(9999);
                      running_processes.push_back(process_to_run);
-                 } else {
-                     // Preempted, move back to ready queue
+                 } else if (preempted) {
+                     // Preempted due to quantum expiration, move back to ready queue
                      process_to_run->set_assigned_core(9999);
                      process_to_run->set_state(ProcessState::eReady);
                      {
                          std::lock_guard lock(ready_mutex);
                          ready_queue.push(process_to_run);
+                         scheduler_cv.notify_one();
                      }
                  }
              }
+         } else {
+             // No process to run, sleep briefly to avoid busy waiting
+             std::this_thread::sleep_for(std::chrono::milliseconds(1));
          }
      }
  }

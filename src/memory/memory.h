@@ -9,11 +9,13 @@
 #include <vector>
 #include <cstdint>
 #include <unordered_map>
+#include <mutex>
 
 
 class Memory {
     std::vector<uint8_t> memory;
     size_t next_free_index = 0;
+    std::mutex allocation_mutex;
 public:
     explicit Memory(const size_t size = 65536) : memory(size) {}
 

@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <ranges>
 
+#include "../cpu_tick.h"
+
 Process::Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory) : id(id), name(name), memory(memory)
  {
     creation_time = std::chrono::system_clock::now();
@@ -36,15 +38,30 @@ Process::Process(const uint16_t id, const std::string &name, const std::shared_p
     }
 }
 
-void Process::execute(uint16_t core_id, int max_instructions)
+void Process::execute(uint16_t core_id, uint32_t quantum, uint32_t delay)
 {
     start_time = std::chrono::system_clock::now();
-    int executed = 0;
-    while (current_instruction < (int)instructions.size() && (max_instructions < 0 || executed < max_instructions)) {
+    int ticks_executed = 0;
+
+    const bool run_indefinitely = quantum == 0;
+
+    while (current_instruction < (int)instructions.size() && (run_indefinitely || ticks_executed < quantum)) {
         if (get_state() == ProcessState::eWaiting) break;
-        instructions[current_instruction]->execute(*this);
-        current_instruction++;
-        executed++;
+
+        uint64_t last_tick = get_cpu_tick();
+        uint64_t current_tick;
+        while ((current_tick = get_cpu_tick()) == last_tick) {
+            std::this_thread::yield();
+        }
+
+        ticks_executed++;
+
+        if (current_tick % (delay + 1) == 0) {
+            instructions[current_instruction]->execute(*this);
+            current_instruction++;
+        }
+
+        if (get_state() == ProcessState::eWaiting) break;
     }
     if (current_instruction >= (int)instructions.size()) {
         end_time = std::chrono::system_clock::now();

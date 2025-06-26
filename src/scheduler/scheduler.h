@@ -20,11 +20,13 @@ enum class SchedulerType { FCFS, RR };
 class Scheduler {
 private:
     std::queue<std::shared_ptr<Process>> ready_queue;
+    std::queue<std::shared_ptr<Process>> waiting_queue;
     std::vector<std::shared_ptr<Process>> running_processes;
     std::vector<std::shared_ptr<Process>> finished_processes;
 
     std::mutex ready_mutex;
     std::mutex running_mutex;
+    std::mutex waiting_mutex;
     std::mutex finished_mutex;
     std::mutex log_mutex;
 

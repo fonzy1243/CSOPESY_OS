@@ -43,7 +43,12 @@ size_t Memory::get_var_address(std::unordered_map<std::string, size_t> &symbol_t
         return it->second;
     }
 
+    // Lock to prevent race conditions
+    std::lock_guard lock(allocation_mutex);
+
     const size_t address = next_free_index += 2;
+
+    symbol_table[var_name] = address;
 
     return address;
 }

@@ -6,9 +6,12 @@
 
 #include <ranges>
 #include <cassert>
+#include <random>
+#include <chrono>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/table.hpp>
+#include "process/instruction.h"
 
 
  ApheliOS::ApheliOS()
@@ -19,6 +22,11 @@
      ShellUtils::print_header(shell->output_buffer);
      current_session->output_buffer = shell->output_buffer;
  }
+
+ApheliOS::~ApheliOS()
+{
+    stop_process_generation();
+}
 
 void ApheliOS::run()
  {
@@ -70,11 +78,25 @@ void ApheliOS::process_command(const std::string &input_raw)
          handle_screen_cmd(command);
      } else if (command_lower == "marquee") {
          ShellUtils::toggle_marquee_mode(*shell);
-     } else if (command_lower == "report-util") {
-         scheduler->write_utilization_report();
-         shell->output_buffer.emplace_back("Utilization report saved to logs/csopesy-log.txt");
-     } else if (command_lower == "smi") {
-         display_smi();
+         } else if (command_lower == "scheduler-start") {
+        if (scheduler_generating_processes) {
+            shell->output_buffer.emplace_back("Scheduler is already generating processes.");
+        } else {
+            start_process_generation();
+            shell->output_buffer.emplace_back("Scheduler started generating processes.");
+        }
+    } else if (command_lower == "scheduler-stop") {
+        if (!scheduler_generating_processes) {
+            shell->output_buffer.emplace_back("Scheduler is not generating processes.");
+        } else {
+            stop_process_generation();
+            shell->output_buffer.emplace_back("Scheduler stopped generating processes.");
+        }
+    } else if (command_lower == "report-util") {
+        scheduler->write_utilization_report();
+        shell->output_buffer.emplace_back("Utilization report saved to logs/csopesy-log.txt");
+    } else if (command_lower == "smi") {
+        display_smi();
      } else if (command_lower == "process-smi") {
          shell->output_buffer.push_back(current_session->process->get_smi_string());
      } else if (!command.empty()) {
@@ -100,10 +122,21 @@ bool ApheliOS::initialize(const std::string& config_file)
 
      config = *config_result;
 
-     scheduler = std::make_unique<Scheduler>(config->num_cpu);
-     scheduler->start();
+         scheduler = std::make_unique<Scheduler>(config->num_cpu);
+    
+    // Configure scheduler type
+    if (config->scheduler == "fcfs") {
+        scheduler->set_scheduler_type(SchedulerType::FCFS);
+    } else if (config->scheduler == "rr") {
+        scheduler->set_scheduler_type(SchedulerType::RR);
+    }
+    
+    // Set quantum cycles for round robin
+    scheduler->set_quantum_cycles(config->quantum_cycles);
+    
+    scheduler->start();
 
-     initialized = true;
+    initialized = true;
 
      shell->output_buffer.emplace_back("Initialize command done.");
      shell->output_buffer.emplace_back(std::format("Configuration loaded successfully:"));
@@ -212,3 +245,108 @@ void ApheliOS::display_smi()
  {
      ShellUtils::display_smi(*shell);
  }
+
+void ApheliOS::start_process_generation()
+{
+    if (!scheduler_generating_processes.load()) {
+        scheduler_generating_processes.store(true);
+        process_generation_thread = std::thread(&ApheliOS::process_generation_worker, this);
+    }
+}
+
+void ApheliOS::stop_process_generation()
+{
+    if (scheduler_generating_processes.load()) {
+        scheduler_generating_processes.store(false);
+        if (process_generation_thread.joinable()) {
+            process_generation_thread.join();
+        }
+    }
+}
+
+void ApheliOS::process_generation_worker()
+{
+    if (!config.has_value()) return;
+
+    const int batch_frequency = config->batch_process_freq;
+    const int min_instructions = config->min_ins;
+    const int max_instructions = config->max_ins;
+    const int delays_per_exec = config->delays_per_exec;
+
+    auto cpu_tick_start = std::chrono::steady_clock::now();
+    int tick_count = 0;
+
+    while (scheduler_generating_processes.load()) {
+        auto current_time = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - cpu_tick_start);
+
+        // Each CPU tick is approximately 10ms for reasonable timing
+        int current_tick = static_cast<int>(elapsed.count() / 10);
+
+        if (current_tick > tick_count && (current_tick % batch_frequency) == 0) {
+            // Generate a new dummy process
+            std::string process_name = std::format("p{:02d}", process_counter++);
+
+            auto new_process = std::make_shared<Process>(current_pid++, process_name, memory);
+
+            // Create a session for this process (but don't make it current)
+            auto new_session = std::make_shared<Session>();
+            new_session->id = current_sid++;
+            new_session->name = process_name;
+
+            auto now = std::chrono::system_clock::now();
+            auto now_seconds = std::chrono::time_point_cast<std::chrono::seconds>(now);
+            new_session->createTime = std::chrono::zoned_time{std::chrono::current_zone(), now_seconds};
+
+            new_session->process = new_process;
+            new_process->session = new_session;
+
+            // Add session to sessions list (but don't change current_session)
+            sessions.push_back(new_session);
+
+            // Generate random number of instructions within min/max range
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<> dis(min_instructions, max_instructions);
+            int num_instructions = dis(gen);
+
+            // Add some dummy instructions to the process
+            for (int i = 0; i < num_instructions; ++i) {
+                auto print_instruction = std::make_shared<PrintInstruction>(
+                    std::format("Hello world from {}!", process_name)
+                );
+
+                auto declare_instruction = std::make_shared<DeclareInstruction>(std::format("hi{}", process_name), 3);
+                auto declare_instruction2 = std::make_shared<DeclareInstruction>(std::format("hello{}", process_name), 2);
+
+                auto add_instruction = std::make_shared<AddInstruction>(std::format("hello{}", process_name), std::format("hi{}", process_name), std::format("hello{}", process_name));
+
+                std::vector<std::shared_ptr<IInstruction>> instructions;
+                instructions.push_back(add_instruction);
+
+                auto for_instruction = std::make_shared<ForInstruction>(instructions, 3);
+
+                auto sleep_instruction = std::make_shared<SleepInstruction>(5000);
+
+                new_process->add_instruction(print_instruction);
+                new_process->add_instruction(declare_instruction);
+                new_process->add_instruction(declare_instruction2);
+                new_process->add_instruction(for_instruction);
+                new_process->add_instruction(sleep_instruction);
+
+                // Add delays between instructions if configured
+                if (delays_per_exec > 0) {
+                    auto sleep_instruction = std::make_shared<SleepInstruction>(delays_per_exec);
+                    new_process->add_instruction(sleep_instruction);
+                }
+            }
+
+            scheduler->add_process(new_process);
+
+            tick_count = current_tick;
+        }
+
+        // Sleep for a reasonable time to avoid CRASHINGGGG
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}

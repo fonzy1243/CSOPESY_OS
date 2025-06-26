@@ -47,7 +47,7 @@ void DeclareInstruction::execute(Process &process)
         process.get_assigned_core(), var_name, value);
 
     // Add to output buffer for viewing
-    process.output_buffer.push_back(log_entry);
+    // process.output_buffer.push_back(log_entry);
 
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;
@@ -100,7 +100,7 @@ void AddInstruction::execute(Process &process)
     process.get_assigned_core(), var1, val2_str, val3_str, static_cast<uint16_t>(result));
 
     // Add to output buffer for viewing
-    process.output_buffer.push_back(log_entry);
+    // process.output_buffer.push_back(log_entry);
 
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;
@@ -155,7 +155,7 @@ void SubtractInstruction::execute(Process &process)
      process.get_assigned_core(), var1, val2_str, val3_str, result);
 
     // Add to output buffer for viewing
-    process.output_buffer.push_back(log_entry);
+    // process.output_buffer.push_back(log_entry);
 
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;
@@ -186,7 +186,7 @@ void SleepInstruction::execute(Process &process)
      process.get_assigned_core(), sleep_start, sleep_until);
 
     // Add to output buffer for viewing
-    process.output_buffer.push_back(log_entry);
+    // process.output_buffer.push_back(log_entry);
 }
 
 std::string SleepInstruction::get_type_name() const

@@ -54,22 +54,43 @@ void Scheduler::stop()
 void Scheduler::scheduler_loop()
  {
      while (running.load()) {
+         // Check waiting processes and move them if they are done sleeping
+         {
+             std::lock_guard waiting_lock(waiting_mutex);
+             std::queue<std::shared_ptr<Process>> still_waiting;
+             while (!waiting_queue.empty()) {
+                 auto process = waiting_queue.front();
+                 waiting_queue.pop();
+
+                 if (get_cpu_tick() >= process->sleep_until_tick.load()) {
+                     process->set_state(ProcessState::eReady);
+                     std::lock_guard ready_lock(ready_mutex);
+                     ready_queue.push(process);
+                     scheduler_cv.notify_one();
+                 } else {
+                     still_waiting.push(process);
+                 }
+             }
+
+             waiting_queue = std::move(still_waiting);
+         }
+
          std::unique_lock ready_lock(ready_mutex);
 
-         scheduler_cv.wait(ready_lock, [this] {
+         if (scheduler_cv.wait_for(ready_lock, std::chrono::milliseconds(500), [this] {
              return !ready_queue.empty() || !running.load();
-         });
+         })) {
+             if (!running.load()) break;
 
-         if (!running.load()) break;
+             std::lock_guard running_lock(running_mutex);
 
-         std::lock_guard running_lock(running_mutex);
+             while (!ready_queue.empty() && static_cast<int>(running_processes.size()) < num_cores) {
+                 auto process = ready_queue.front();
+                 ready_queue.pop();
 
-         while (!ready_queue.empty() && static_cast<int>(running_processes.size()) < num_cores) {
-             auto process = ready_queue.front();
-             ready_queue.pop();
-
-             process->set_state(ProcessState::eRunning);
-             running_processes.push_back(process);
+                 process->set_state(ProcessState::eRunning);
+                 running_processes.push_back(process);
+             }
          }
 
          ready_lock.unlock();
@@ -134,38 +155,36 @@ void Scheduler::cpu_worker(uint16_t core_id)
                      preempted = true;
                  } else {
                      // Process finished before quantum expired
-                     finished = true;
+                     finished = (instructions_after >= (int)process_to_run->instructions.size());
                  }
              }
 
              {
                  std::lock_guard running_lock(running_mutex);
-                 std::lock_guard finished_lock(finished_mutex);
-
                  auto it = std::find(running_processes.begin(), running_processes.end(), process_to_run);
 
                  if (it != running_processes.end()) {
                      running_processes.erase(it);
                  }
+             }
+
+             process_to_run->set_assigned_core(9999);
 
                  if (finished) {
                      process_to_run->set_state(ProcessState::eFinished);
+                     std::lock_guard finished_lock(finished_mutex);
                      finished_processes.push_back(process_to_run);
                  } else if (process_to_run->get_state() == ProcessState::eWaiting) {
                      // Still waiting (e.g., sleeping), keep in running_processes
-                     process_to_run->set_assigned_core(9999);
-                     running_processes.push_back(process_to_run);
+                     std::lock_guard waiting_lock(waiting_mutex);
+                     waiting_queue.push(process_to_run);
                  } else if (preempted) {
                      // Preempted due to quantum expiration, move back to ready queue
-                     process_to_run->set_assigned_core(9999);
                      process_to_run->set_state(ProcessState::eReady);
-                     {
-                         std::lock_guard lock(ready_mutex);
-                         ready_queue.push(process_to_run);
-                         scheduler_cv.notify_one();
-                     }
+                     std::lock_guard lock(ready_mutex);
+                     ready_queue.push(process_to_run);
+                     scheduler_cv.notify_one();
                  }
-             }
          } else {
              // No process to run, sleep briefly to avoid busy waiting
              std::this_thread::sleep_for(std::chrono::milliseconds(1));

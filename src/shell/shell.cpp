@@ -216,7 +216,6 @@ void Shell::shell_loop(bool print_header)
     auto loop = Loop(&screen, renderer);
 
     while (!apheli_os.quit) {
-        increment_cpu_tick();
         loop.RunOnce();
 
         if (marquee_mode) {

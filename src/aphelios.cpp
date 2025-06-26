@@ -143,13 +143,15 @@ bool ApheliOS::initialize(const std::string& config_file)
     // Configure scheduler type
     if (config->scheduler == "fcfs") {
         scheduler->set_scheduler_type(SchedulerType::FCFS);
+        scheduler->set_delay(0);
     } else if (config->scheduler == "rr") {
         scheduler->set_scheduler_type(SchedulerType::RR);
+        scheduler->set_delay(config->delays_per_exec);
     }
     
     // Set quantum cycles for round robin
     scheduler->set_quantum_cycles(config->quantum_cycles);
-    
+
     scheduler->start();
 
     initialized = true;

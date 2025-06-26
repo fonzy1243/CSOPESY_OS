@@ -32,6 +32,9 @@ void DeclareInstruction::execute(Process &process)
         tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
         process.get_assigned_core(), var_name, value);
 
+    // Add to output buffer for viewing
+    process.output_buffer.push_back(log_entry);
+
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;
         process.log_file.flush();
@@ -81,6 +84,9 @@ void AddInstruction::execute(Process &process)
     std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"ADD {} = {} + {} = {}\"",
     tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
     process.get_assigned_core(), var1, val2_str, val3_str, static_cast<uint16_t>(result));
+
+    // Add to output buffer for viewing
+    process.output_buffer.push_back(log_entry);
 
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;
@@ -133,6 +139,9 @@ void SubtractInstruction::execute(Process &process)
     std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"SUBTRACT {} = {} - {} = {}\"",
      tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
      process.get_assigned_core(), var1, val2_str, val3_str, result);
+
+    // Add to output buffer for viewing
+    process.output_buffer.push_back(log_entry);
 
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;

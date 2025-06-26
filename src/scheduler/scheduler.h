@@ -39,6 +39,7 @@ private:
     std::thread scheduler_thread;
 
     uint32_t quantum_cycles = 1;
+    uint32_t delay = 1;
     SchedulerType scheduler_type = SchedulerType::FCFS;
 
     void scheduler_loop();
@@ -60,8 +61,10 @@ public:
 
     std::string get_status_string();
 
+    void set_delay(uint32_t delay) { this->delay = delay; }
     void set_quantum_cycles(uint32_t q) { quantum_cycles = q; }
     void set_scheduler_type(SchedulerType t) { scheduler_type = t; }
+    uint32_t get_delay() const { return delay; }
     uint32_t get_quantum_cycles() const { return quantum_cycles; }
     SchedulerType get_scheduler_type() const { return scheduler_type; }
 };

@@ -57,6 +57,7 @@ void Scheduler::scheduler_loop()
          // Check waiting processes and move them if they are done sleeping
          {
              std::lock_guard waiting_lock(waiting_mutex);
+             std::unique_lock ready_lock(ready_mutex);
              std::queue<std::shared_ptr<Process>> still_waiting;
              while (!waiting_queue.empty()) {
                  auto process = waiting_queue.front();
@@ -64,7 +65,6 @@ void Scheduler::scheduler_loop()
 
                  if (get_cpu_tick() >= process->sleep_until_tick.load()) {
                      process->set_state(ProcessState::eReady);
-                     std::lock_guard ready_lock(ready_mutex);
                      ready_queue.push(process);
                      scheduler_cv.notify_one();
                  } else {
@@ -74,6 +74,8 @@ void Scheduler::scheduler_loop()
 
              waiting_queue = std::move(still_waiting);
          }
+
+         scheduler_cv.notify_all();
 
          std::unique_lock ready_lock(ready_mutex);
 
@@ -126,65 +128,34 @@ void Scheduler::cpu_worker(uint16_t core_id)
          }
 
          if (process_to_run) {
-             bool finished = false;
-             bool preempted = false;
-             
-             if (scheduler_type == SchedulerType::FCFS) {
-                 process_to_run->execute(core_id);
-                 finished = true;
-             } else if (scheduler_type == SchedulerType::RR) {
-                 // Round Robin: Run for quantum_cycles instructions
-                 int instructions_before = process_to_run->current_instruction.load();
-                 
-                 // Execute for the specified quantum
-                 process_to_run->execute(core_id, quantum_cycles);
-                 
-                 int instructions_after = process_to_run->current_instruction.load();
-                 
-                 // Check if process finished
-                 if (instructions_after >= (int)process_to_run->instructions.size()) {
-                     finished = true;
-                 } 
-                 // Check if process is waiting (e.g., sleeping)
-                 else if (process_to_run->get_state() == ProcessState::eWaiting) {
-                     // Process is waiting, don't preempt
-                     preempted = false;
-                 }
-                 // Check if quantum was used up (preemption needed)
-                 else if (instructions_after - instructions_before >= quantum_cycles) {
-                     preempted = true;
-                 } else {
-                     // Process finished before quantum expired
-                     finished = (instructions_after >= (int)process_to_run->instructions.size());
-                 }
-             }
+             uint32_t ticks_to_run = (scheduler_type == SchedulerType::FCFS) ? 0 : quantum_cycles;
+
+             process_to_run->execute(core_id, ticks_to_run, delay);
 
              {
-                 std::lock_guard running_lock(running_mutex);
-                 auto it = std::find(running_processes.begin(), running_processes.end(), process_to_run);
-
-                 if (it != running_processes.end()) {
-                     running_processes.erase(it);
-                 }
+                 std::lock_guard lock(running_mutex);
+                 std::erase(running_processes, process_to_run);
              }
 
              process_to_run->set_assigned_core(9999);
 
-                 if (finished) {
-                     process_to_run->set_state(ProcessState::eFinished);
-                     std::lock_guard finished_lock(finished_mutex);
-                     finished_processes.push_back(process_to_run);
-                 } else if (process_to_run->get_state() == ProcessState::eWaiting) {
-                     // Still waiting (e.g., sleeping), keep in running_processes
-                     std::lock_guard waiting_lock(waiting_mutex);
-                     waiting_queue.push(process_to_run);
-                 } else if (preempted) {
-                     // Preempted due to quantum expiration, move back to ready queue
-                     process_to_run->set_state(ProcessState::eReady);
-                     std::lock_guard lock(ready_mutex);
-                     ready_queue.push(process_to_run);
-                     scheduler_cv.notify_one();
-                 }
+             const bool finished = (process_to_run->current_instruction.load() >= (int)process_to_run->instructions.size());
+
+             if (finished) {
+                 process_to_run->set_state(ProcessState::eFinished);
+                 std::lock_guard finished_lock(finished_mutex);
+                 finished_processes.push_back(process_to_run);
+             } else if (process_to_run->get_state() == ProcessState::eWaiting) {
+                 // Still waiting (e.g., sleeping), keep in running_processes
+                 std::lock_guard waiting_lock(waiting_mutex);
+                 waiting_queue.push(process_to_run);
+             } else {
+                 // Preempted due to quantum expiration, move back to ready queue
+                 process_to_run->set_state(ProcessState::eReady);
+                 std::lock_guard lock(ready_mutex);
+                 ready_queue.push(process_to_run);
+                 scheduler_cv.notify_one();
+             }
          } else {
              // No process to run, sleep briefly to avoid busy waiting
              std::this_thread::sleep_for(std::chrono::milliseconds(1));

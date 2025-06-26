@@ -144,6 +144,7 @@ void ApheliOS::create_screen(const std::string &name)
 
      auto new_process = std::make_shared<Process>(current_pid++, name, this->memory);
      create_session(name, false, new_process);
+
      scheduler->add_process(new_process);
 
 

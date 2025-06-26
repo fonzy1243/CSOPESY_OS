@@ -69,6 +69,7 @@ void Scheduler::scheduler_loop()
              ready_queue.pop();
 
              process->set_state(ProcessState::eRunning);
+             process->set_assigned_core(9999);
              running_processes.push_back(process);
          }
 
@@ -105,10 +106,34 @@ void Scheduler::cpu_worker(uint16_t core_id)
          }
 
          if (process_to_run) {
+
              bool finished = false;
+
              if (scheduler_type == SchedulerType::FCFS) {
+
+                 uint64_t wake_tick = process_to_run->sleep_until_tick.load();
+                 uint64_t current_tick = get_cpu_tick();
+
+                 if (wake_tick > 0) {
+                     if (current_tick < wake_tick) {
+                         process_to_run->set_assigned_core(9999);
+                         {
+                             std::lock_guard lock(running_mutex);
+                             running_processes.push_back(process_to_run);
+                         }
+                         continue;
+                     } else {
+                         process_to_run->set_state(ProcessState::eRunning);
+                     }
+                 }
+
                  process_to_run->execute(core_id);
-                 finished = true;
+                 process_to_run->sleep_until_tick.store(0); // clear the wake tick
+
+                 if (process_to_run->current_instruction.load() >= static_cast<int>(process_to_run->instructions.size())) {
+                     finished = true;
+                 }
+
              } else if (scheduler_type == SchedulerType::RR) {
                  int before = process_to_run->current_instruction.load();
                  process_to_run->execute(core_id, quantum_cycles);
@@ -116,7 +141,8 @@ void Scheduler::cpu_worker(uint16_t core_id)
                  if (after >= (int)process_to_run->instructions.size()) {
                      finished = true;
                  }
-             }
+             } 
+            
 
              {
                  std::lock_guard running_lock(running_mutex);

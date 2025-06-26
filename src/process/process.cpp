@@ -41,7 +41,9 @@ void Process::execute(uint16_t core_id, int max_instructions)
     start_time = std::chrono::system_clock::now();
     int executed = 0;
     while (current_instruction < (int)instructions.size() && (max_instructions < 0 || executed < max_instructions)) {
-        if (get_state() == ProcessState::eWaiting) break;
+        if (get_state() == ProcessState::eWaiting) {
+            break;
+        }
         instructions[current_instruction]->execute(*this);
         current_instruction++;
         executed++;

@@ -9,6 +9,7 @@
 
 void PrintInstruction::execute(Process &process)
 {
+
     uint16_t core_id = process.assigned_core.load();
 
     auto now = std::chrono::system_clock::now();
@@ -161,7 +162,10 @@ std::string SubtractInstruction::get_type_name() const
 
 void SleepInstruction::execute(Process &process)
 {
-
+    uint64_t now = get_cpu_tick();
+    process.sleep_until_tick.store(now + x);  
+    process.set_state(ProcessState::eWaiting);
+    process.output_buffer.push_back(std::format("[SLEEP] Sleeping for {} ticks...", x));
 }
 
 std::string SleepInstruction::get_type_name() const

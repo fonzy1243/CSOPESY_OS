@@ -90,7 +90,6 @@ void Scheduler::scheduler_loop()
                  auto process = ready_queue.front();
                  ready_queue.pop();
 
-                 process->set_state(ProcessState::eRunning);
                  running_processes.push_back(process);
              }
          }
@@ -122,6 +121,7 @@ void Scheduler::cpu_worker(uint16_t core_id)
                  if ((*it)->get_state() == ProcessState::eRunning && (*it)->get_assigned_core() == 9999) {
                      process_to_run = *it;
                      process_to_run->set_assigned_core(core_id);
+                     process_to_run->set_state(ProcessState::eRunning);
                      break;
                  }
              }
@@ -199,7 +199,8 @@ std::string Scheduler::get_status_string()
      result += "Running processes:\n";
      auto running_processes = get_running();
      for (const auto& process : running_processes) {
-         result += std::format("{}\n", process->get_status_string());
+         if (process->get_state() == ProcessState::eRunning)
+             result += std::format("{}\n", process->get_status_string());
      }
 
      result += "\nFinished processes:\n";

@@ -66,7 +66,6 @@ void Scheduler::scheduler_loop()
                  if (get_cpu_tick() >= process->sleep_until_tick.load()) {
                      process->set_state(ProcessState::eReady);
                      ready_queue.push(process);
-                     scheduler_cv.notify_one();
                  } else {
                      still_waiting.push(process);
                  }
@@ -75,7 +74,9 @@ void Scheduler::scheduler_loop()
              waiting_queue = std::move(still_waiting);
          }
 
-         scheduler_cv.notify_all();
+         if (!ready_queue.empty()) {
+             scheduler_cv.notify_all();
+         }
 
          std::unique_lock ready_lock(ready_mutex);
 

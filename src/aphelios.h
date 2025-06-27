@@ -66,6 +66,19 @@ private:
     void start_process_generation();
     void stop_process_generation();
     void process_generation_worker();
+    
+    // Helper function for generating nested for instructions
+    std::shared_ptr<class ForInstruction> generate_random_for_instruction(
+        const std::string& process_name, 
+        int instruction_index, 
+        std::vector<std::string>& declared_vars,
+        std::mt19937& gen,
+        std::uniform_int_distribution<>& value_dis,
+        std::uniform_int_distribution<>& sleep_dis,
+        int depth,
+        int& instruction_count,
+        int max_instructions
+    );
 };
 
 

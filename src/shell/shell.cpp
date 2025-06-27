@@ -45,7 +45,11 @@ void ShellUtils::clear_screen() { std::cout << "\033[2J\033[1;1H"; }
 
 void ShellUtils::print_header(std::deque<std::string>& output_buffer)
 {
-    output_buffer.emplace_back(ascii_art_name);
+    std::istringstream iss(ascii_art_name.data());
+    std::string line;
+    while (std::getline(iss, line)) {
+        output_buffer.push_back(line);
+    }
     output_buffer.emplace_back("Welcome to ApheliOS!");
     output_buffer.emplace_back("Type 'exit' to quit, and 'clear' to clear the screen.");
 }
@@ -151,24 +155,41 @@ void ShellUtils::display_smi(Shell &shell)
     shell.output_buffer.push_back(smi_output);
 }
 
+void Shell::add_multiline_output(const std::string &content)
+{
+    std::istringstream iss(content);
+    std::string line;
+    while (std::getline(iss, line)) {
+        output_buffer.push_back(line);
+    }
+}
+
 void Shell::shell_loop(bool print_header)
 {
     using namespace ftxui;
 
+    int scroll_offset = 0;
+    bool autoscroll = true;
+    bool pendingscroll = false;
     std::string input;
+
     const std::string prompt_text = "ApheliOS:~$ ";
 
     auto input_option = InputOption();
     input_option.on_enter = [&] {
+        autoscroll = true;
+        pendingscroll = true;
         output_buffer.push_back(prompt_text + input);
 
         apheli_os.process_command(input);
 
         if (apheli_os.current_session && apheli_os.current_session->process) {
-            output_buffer.insert(output_buffer.end(), apheli_os.current_session->process->output_buffer.begin(), apheli_os.current_session->process->output_buffer.end());
+            output_buffer.insert(output_buffer.end(), apheli_os.current_session->process->output_buffer.begin(),
+                                 apheli_os.current_session->process->output_buffer.end());
             apheli_os.current_session->process->output_buffer.clear();
         }
 
+        output_buffer.push_back("");
         input.clear();
 
         if (apheli_os.quit) {
@@ -191,26 +212,84 @@ void Shell::shell_loop(bool print_header)
         ShellUtils::print_header(output_buffer);
     }
 
-    auto render_output = [&] {
+    auto render_output = [&]() -> Element {
         std::vector<Element> elements;
-        for (const auto& line : output_buffer) {
-            elements.push_back(paragraph(line) | color(Color::Default));
+        int total_lines = static_cast<int>(output_buffer.size());
+        int height = screen.dimy();
+        int max_lines = std::max(1, height - 3); 
+
+        int max_scroll = std::max(0, total_lines - max_lines);
+        scroll_offset = std::clamp(scroll_offset, 0, max_scroll);
+
+        int start = scroll_offset;
+        int end = std::min(start + max_lines, total_lines);
+
+        for (int i = start; i < end; ++i) {
+            elements.push_back(paragraph(output_buffer[i]) | color(Color::Default));
         }
+
         return vbox(elements);
     };
 
     const auto layout = Container::Vertical({input_field});
 
-    const auto renderer = Renderer(layout, [&] {
-        auto marquee_display = ShellUtils::create_marquee_display(*this);
-        return vbox({
-            vbox(render_output() | flex),
-            marquee_display,
-            hbox({
-                text(prompt_text),
-                input_field->Render() | selectionForegroundColor(Color::Aquamarine1) | flex,
-            })
-        }) | yflex | yframe;
+    auto base_renderer = Renderer(layout, [&] {
+    auto marquee_display = ShellUtils::create_marquee_display(*this);
+    
+    //so it has the border and 3 lines alloted space
+    auto bottom_section = vbox({
+        text(""), 
+        hbox({
+            text(prompt_text),
+            input_field->Render() | selectionForegroundColor(Color::Aquamarine1) | flex
+        }), 
+        text("")   
+    }) | border;  
+    
+    return vbox({
+        render_output() | flex,
+        marquee_display, 
+        bottom_section  
+    }) | yflex;
+});
+
+    auto renderer = CatchEvent(base_renderer, [&](Event event) {
+        int height = screen.dimy();
+        int max_lines = std::max(1, height - 3); 
+        int total_lines = static_cast<int>(output_buffer.size());
+        int max_scroll = std::max(0, total_lines - max_lines);
+
+        if (event == Event::ArrowUp) {
+            autoscroll = false;
+            scroll_offset = std::max(0, scroll_offset - 1);
+            return true;
+        }
+        if (event == Event::ArrowDown) {
+            autoscroll = false;
+            scroll_offset = std::min(scroll_offset + 1, max_scroll);
+            return true;
+        }
+        if (event == Event::PageUp) {
+            autoscroll = false;
+            scroll_offset = std::max(0, scroll_offset - max_lines);
+            return true;
+        }
+        if (event == Event::PageDown) {
+            autoscroll = false;
+            scroll_offset = std::min(scroll_offset + max_lines, max_scroll);
+            return true;
+        }
+        if (event == Event::Home) {
+            autoscroll = false;
+            scroll_offset = 0;
+            return true;
+        }
+        if (event == Event::End) {
+            autoscroll = true;
+            scroll_offset = max_scroll;
+            return true;
+        }
+        return false;
     });
 
     auto loop = Loop(&screen, renderer);
@@ -218,11 +297,33 @@ void Shell::shell_loop(bool print_header)
     while (!apheli_os.quit) {
         loop.RunOnce();
 
-        if (marquee_mode) {
-            screen.RequestAnimationFrame();
+        // autoscroll for newly added content
+        if (autoscroll && pendingscroll) {
+            int height = screen.dimy();
+            int max_lines = std::max(1, height - 3);
+            int total_lines = static_cast<int>(output_buffer.size());
+            scroll_offset = std::max(0, total_lines - max_lines);
+            pendingscroll = false;
+            screen.PostEvent(Event::Custom);
         }
+
+        // for marquee scrolling
+        if (marquee_mode) {
+            int height = screen.dimy();
+            int max_lines = std::max(1, height - 8);
+            int total_lines = static_cast<int>(output_buffer.size());
+            if (autoscroll) {
+                scroll_offset = std::max(0, total_lines - max_lines);
+            }
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
+
+
+
+
 
 void ShellUtils::toggle_marquee_mode(Shell& shell)
 {

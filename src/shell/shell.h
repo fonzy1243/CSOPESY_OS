@@ -69,7 +69,7 @@ public:
     bool exit_to_main_menu{false};
 
     explicit Shell(ApheliOS& aphelios_ref);
-
+    void add_multiline_output(const std::string &content);
     void run(bool print_header);
 
 private:

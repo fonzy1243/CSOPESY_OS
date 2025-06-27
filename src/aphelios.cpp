@@ -110,7 +110,7 @@ void ApheliOS::process_command(const std::string &input_raw)
     } else if (command_lower == "smi") {
         display_smi();
      } else if (command_lower == "process-smi") {
-         shell->output_buffer.push_back(current_session->process->get_smi_string());
+         shell->add_multiline_output(current_session->process->get_smi_string());
      } else if (!command.empty()) {
          shell->output_buffer.push_back(std::format("{}: command not found", command));
      }
@@ -182,7 +182,7 @@ void ApheliOS::handle_screen_cmd(const std::string &input)
          switch_screen(std::string(args[1]));
      } else if (args[0] == "-ls") {
          std::string status = scheduler->get_status_string();
-         shell->output_buffer.emplace_back(status);
+         shell->add_multiline_output(status);
      }
  }
 

@@ -165,3 +165,14 @@ void Process::unroll_instructions()
     instructions = std::move(expanded_list);
 
 }
+
+void Process::save_smi_to_file()
+{
+    std::filesystem::create_directories("logs");
+    const std::string filename = std::format("logs/process_smi_{}.txt", name);
+    std::ofstream out(filename, std::ios::out | std::ios::trunc);
+    if (out.is_open()) {
+        out << get_smi_string();
+        out.close();
+    }
+}

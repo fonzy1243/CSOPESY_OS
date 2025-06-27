@@ -63,6 +63,7 @@ struct CPUConfig
                batch_process_freq >= 1 && batch_process_freq <= (1 << 24) &&
                min_ins >= 1 && min_ins <= std::numeric_limits<int>::max() &&
                max_ins >= 1 && max_ins <= std::numeric_limits<int>::max() &&
+               min_ins <= max_ins &&
                delays_per_exec >= 0 && delays_per_exec <= std::numeric_limits<int>::max();
     }
 };

@@ -118,7 +118,7 @@ void Scheduler::cpu_worker(uint16_t core_id)
          {
              std::lock_guard lock(running_mutex);
              for (auto it = running_processes.begin(); it != running_processes.end(); ++it) {
-                 if ((*it)->get_state() == ProcessState::eRunning && (*it)->get_assigned_core() == 9999) {
+                 if ((*it)->get_state() == ProcessState::eReady && (*it)->get_assigned_core() == 9999) {
                      process_to_run = *it;
                      process_to_run->set_assigned_core(core_id);
                      process_to_run->set_state(ProcessState::eRunning);

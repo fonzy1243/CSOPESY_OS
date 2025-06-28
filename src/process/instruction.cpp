@@ -11,6 +11,13 @@ void PrintInstruction::execute(Process &process)
 {
     uint16_t core_id = process.assigned_core.load();
 
+    std::string final_message = message;
+    if (has_variable) {
+        size_t var_address = process.memory->get_var_address(process.symbol_table, variable_name);
+        uint16_t var_value = process.memory->read_word(var_address);
+
+        final_message = message + variable_name + " = " + std::to_string(var_value);
+    }
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
     std::tm tm;
@@ -18,10 +25,10 @@ void PrintInstruction::execute(Process &process)
 
     std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"PRINT {}\"",
         tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
-        core_id, message);
+        core_id, final_message);
     process.print_logs.push_back(log_entry);
 
-    process.output_buffer.push_back("[PRINT] " + message);
+    process.output_buffer.push_back("[PRINT] " + final_message);
 }
 
 std::string PrintInstruction::get_type_name() const

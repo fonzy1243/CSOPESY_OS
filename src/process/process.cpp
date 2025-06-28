@@ -10,33 +10,9 @@ Process::Process(const uint16_t id, const std::string &name, const std::shared_p
     creation_time = std::chrono::system_clock::now();
 
     std::filesystem::create_directories("logs");
-
-    std::string log_filename = std::format("logs/process_{}.txt", id);
-    log_file.open(log_filename, std::ios::out | std::ios::trunc);
-
-    if (log_file.is_open()) {
-        auto time_t = std::chrono::system_clock::to_time_t(creation_time);
-        std::tm tm{};
-
-        localtime_s(&tm, &time_t);
-
-        std::stringstream ss;
-        ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
-        std::string formatted_time = ss.str();
-
-
-        log_file << std::format("Process name: {}\n", this->name);
-        log_file << std::format("Time created: {}", formatted_time);
-        log_file << std::format("Logs:\n");
-    }
  }
 
- Process::~Process()
-{
-    if (log_file.is_open()) {
-        log_file.close();
-    }
-}
+ Process::~Process(){}
 
 void Process::execute(uint16_t core_id, uint32_t quantum, uint32_t delay)
 {

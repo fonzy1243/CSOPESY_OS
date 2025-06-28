@@ -128,6 +128,19 @@ void Scheduler::cpu_worker(uint16_t core_id)
              }
          }
 
+         if (!process_to_run) {
+             std::lock_guard lock(ready_mutex);
+             std::lock_guard running_lock(running_mutex);
+
+             if (!ready_queue.empty() && static_cast<int>(running_processes.size()) < num_cores) {
+                 process_to_run = ready_queue.front();
+                 ready_queue.pop();
+                 running_processes.push_back(process_to_run);
+                 process_to_run->set_assigned_core(core_id);
+                 process_to_run->set_state(ProcessState::eRunning);
+             }
+         }
+
          if (process_to_run) {
              uint32_t ticks_to_run = (scheduler_type == SchedulerType::FCFS) ? 0 : quantum_cycles;
 

@@ -62,6 +62,14 @@ void ApheliOS::process_command(const std::string &input_raw)
 
      bool is_initial_shell = !current_session || current_session->name == "pts";
 
+     auto in_main = [&](const std::string &cmd) {
+         if (!is_initial_shell) {
+             shell->output_buffer.emplace_back(std::format("Error: '{}' can only be run in the main session.", cmd));
+             return false;
+         }
+         return true;
+     };
+
      if (command_lower == "initialize") {
          if (initialized) {
              shell->output_buffer.emplace_back("ApheliOS already initialized.");
@@ -88,27 +96,31 @@ void ApheliOS::process_command(const std::string &input_raw)
          ShellUtils::clear_screen();
          shell->output_buffer.clear();
      } else if (command_lower.rfind("screen", 0) == 0) {
+         if (!in_main("screen")) return;
          handle_screen_cmd(command);
      } else if (command_lower == "marquee") {
          ShellUtils::toggle_marquee_mode(*shell);
-         } else if (command_lower == "scheduler-start") {
-        if (scheduler_generating_processes) {
-            shell->output_buffer.emplace_back("Scheduler is already generating processes.");
-        } else {
-            start_process_generation();
-            shell->output_buffer.emplace_back("Scheduler started generating processes.");
-        }
-    } else if (command_lower == "scheduler-stop") {
-        if (!scheduler_generating_processes) {
-            shell->output_buffer.emplace_back("Scheduler is not generating processes.");
-        } else {
-            stop_process_generation();
-            shell->output_buffer.emplace_back("Scheduler stopped generating processes.");
-        }
-    } else if (command_lower == "report-util") {
-        scheduler->write_utilization_report();
-        shell->output_buffer.emplace_back("Utilization report saved to logs/csopesy-log.txt");
-    } else if (command_lower == "smi") {
+     } else if (command_lower == "scheduler-start") {
+         if (!in_main("scheduler-start")) return;
+         if (scheduler_generating_processes) {
+             shell->output_buffer.emplace_back("Scheduler is already generating processes.");
+         } else {
+             start_process_generation();
+             shell->output_buffer.emplace_back("Scheduler started generating processes.");
+         }
+     } else if (command_lower == "scheduler-stop") {
+         if (!in_main("scheduler-stop")) return;
+         if (!scheduler_generating_processes) {
+             shell->output_buffer.emplace_back("Scheduler is not generating processes.");
+         } else {
+             stop_process_generation();
+             shell->output_buffer.emplace_back("Scheduler stopped generating processes.");
+         }
+     } else if (command_lower == "report-util") {
+         if (!in_main("report_util")) return;
+         scheduler->write_utilization_report();
+         shell->output_buffer.emplace_back("Utilization report saved to logs/csopesy-log.txt");
+     } else if (command_lower == "smi") {
         display_smi();
      } else if (command_lower == "process-smi") {
          shell->add_multiline_output(current_session->process->get_smi_string());

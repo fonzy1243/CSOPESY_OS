@@ -308,14 +308,17 @@ std::shared_ptr<ForInstruction> ApheliOS::generate_random_for_instruction(
     std::uniform_int_distribution<>& sleep_dis,
     int depth,
     int& instruction_count,
-    int max_instructions
+    int max_instructions,
+    int cumulative_multiplier
 ) {
     const int max_depth = 3;
     std::vector<std::shared_ptr<IInstruction>> sub_instructions;
     
     // Fixed iteration count: always 5 iterations regardless of depth
     uint16_t repeats = 5;
-    
+    int new_cumulative_multiplier = cumulative_multiplier * repeats;
+
+
     // Add 1-3 random sub-instructions to the for loop body, but respect max instruction limit
     std::uniform_int_distribution<> sub_count_dis(1, 3);
     int sub_count = sub_count_dis(gen);
@@ -324,6 +327,10 @@ std::shared_ptr<ForInstruction> ApheliOS::generate_random_for_instruction(
     std::uniform_int_distribution<> instruction_type_dis(0, depth < max_depth ? 5 : 4);
     
     for (int j = 0; j < sub_count && instruction_count < max_instructions; ++j) {
+        if (instruction_count + new_cumulative_multiplier > max_instructions) {
+            break;
+        }
+
         int sub_type = instruction_type_dis(gen);
         
         switch (sub_type) {
@@ -332,7 +339,7 @@ std::shared_ptr<ForInstruction> ApheliOS::generate_random_for_instruction(
                     std::format("Loop iteration from {} depth {} instruction {}!", process_name, depth, j)
                 );
                 sub_instructions.push_back(print_instruction);
-                instruction_count += repeats; // Count this instruction * repeats
+                instruction_count += new_cumulative_multiplier; // Count this instruction * repeats
                 break;
             }
             case 1: { // DeclareInstruction
@@ -341,7 +348,7 @@ std::shared_ptr<ForInstruction> ApheliOS::generate_random_for_instruction(
                 auto declare_instruction = std::make_shared<DeclareInstruction>(var_name, value);
                 sub_instructions.push_back(declare_instruction);
                 declared_vars.push_back(var_name);
-                instruction_count += repeats; // Count this instruction * repeats
+                instruction_count += new_cumulative_multiplier; // Count this instruction * repeats
                 break;
             }
             case 2: { // AddInstruction
@@ -351,7 +358,7 @@ std::shared_ptr<ForInstruction> ApheliOS::generate_random_for_instruction(
                 auto add_instruction = std::make_shared<AddInstruction>(result_var, val1, val2);
                 sub_instructions.push_back(add_instruction);
                 declared_vars.push_back(result_var);
-                instruction_count += repeats; // Count this instruction * repeats
+                instruction_count += new_cumulative_multiplier; // Count this instruction * repeats
                 break;
             }
             case 3: { // SubtractInstruction
@@ -361,20 +368,20 @@ std::shared_ptr<ForInstruction> ApheliOS::generate_random_for_instruction(
                 auto subtract_instruction = std::make_shared<SubtractInstruction>(result_var, val1, val2);
                 sub_instructions.push_back(subtract_instruction);
                 declared_vars.push_back(result_var);
-                instruction_count += repeats; // Count this instruction * repeats
+                instruction_count += new_cumulative_multiplier; // Count this instruction * repeats
                 break;
             }
             case 4: { // SleepInstruction
                 uint8_t sleep_time = sleep_dis(gen);
                 auto sleep_instruction = std::make_shared<SleepInstruction>(sleep_time);
                 sub_instructions.push_back(sleep_instruction);
-                instruction_count += repeats; // Count this instruction * repeats
+                instruction_count += new_cumulative_multiplier; // Count this instruction * repeats
                 break;
             }
             case 5: { // Nested ForInstruction (only if we haven't reached max depth)
                 if (depth < max_depth && instruction_count < max_instructions) {
                     auto nested_for = generate_random_for_instruction(
-                        process_name, instruction_index, declared_vars, gen, value_dis, sleep_dis, depth + 1, instruction_count, max_instructions
+                        process_name, instruction_index, declared_vars, gen, value_dis, sleep_dis, depth + 1, instruction_count, max_instructions, new_cumulative_multiplier
                     );
                     sub_instructions.push_back(nested_for);
                     // Note: ForInstruction itself doesn't count, but its contents do
@@ -525,7 +532,7 @@ void ApheliOS::process_generation_worker()
                      case 5: { // ForInstruction
                          if (instruction_count < target_instructions) {
                              auto for_instruction = generate_random_for_instruction(
-                                 process_name, i, declared_vars, gen, value_dis, sleep_dis, 0, instruction_count, target_instructions
+                                 process_name, i, declared_vars, gen, value_dis, sleep_dis, 0, instruction_count, target_instructions, 1
                              );
                              new_process->add_instruction(for_instruction);
                              // Note: ForInstruction itself doesn't count, but its contents do (already counted in helper function)

@@ -431,7 +431,14 @@ void ApheliOS::process_generation_worker()
             // Add instructions to the process using random selection, respecting max instruction limit
             for (int i = 0; instruction_count < target_instructions; ++i) {
                 int instruction_type = instruction_type_dis(gen);
-                
+
+                /* example of using new case for PRINT with variable
+                auto declared_print = std::make_shared<DeclareInstruction>("printvalue", 8);
+                new_process->add_instruction(declared_print);
+                auto print = std::make_shared<PrintInstruction>("Value from: ", "printvalue");
+                new_process->add_instruction(print);
+                */
+
                 switch (instruction_type) {
                      case 0: { // PrintInstruction
                          auto print_instruction = std::make_shared<PrintInstruction>(

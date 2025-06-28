@@ -184,7 +184,7 @@ std::string Scheduler::get_status_string()
      result += "CPU Utilization Report:\n";
 
 
-     int cores_used;
+     int cores_used = 0;
      {
          std::lock_guard lock(running_mutex);
          cores_used = std::count_if(running_processes.begin(), running_processes.end(), [](const auto &p) {

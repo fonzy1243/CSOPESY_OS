@@ -55,6 +55,7 @@ void DeclareInstruction::execute(Process &process)
 
     // Add to print log for viewing with process-smi
     process.print_logs.push_back(log_entry);
+    process.output_buffer.push_back(log_entry);
 
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;
@@ -109,6 +110,7 @@ void AddInstruction::execute(Process &process)
 
     // Add to print_logs for viewing
     process.print_logs.push_back(log_entry);
+    process.output_buffer.push_back(log_entry);
 
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;
@@ -165,6 +167,7 @@ void SubtractInstruction::execute(Process &process)
 
     // Add to print_logs for viewing
     process.print_logs.push_back(log_entry);
+    process.output_buffer.push_back(log_entry);
 
     if (process.log_file.is_open()) {
         process.log_file << log_entry << std::endl;
@@ -197,6 +200,7 @@ void SleepInstruction::execute(Process &process)
 
     // Add to print logs for viewing
     process.print_logs.push_back(log_entry);
+    process.output_buffer.push_back(log_entry);
 }
 
 std::string SleepInstruction::get_type_name() const

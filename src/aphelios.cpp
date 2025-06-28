@@ -123,7 +123,9 @@ void ApheliOS::process_command(const std::string &input_raw)
      } else if (command_lower == "smi") {
         display_smi();
      } else if (command_lower == "process-smi") {
+         const std::string smi_output = current_session->process->get_smi_string();
          shell->add_multiline_output(current_session->process->get_smi_string());
+         current_session->process->save_smi_to_file();
      } else if (!command.empty()) {
          shell->output_buffer.push_back(std::format("{}: command not found", command));
      }

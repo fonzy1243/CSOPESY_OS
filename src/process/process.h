@@ -65,6 +65,7 @@ public:
     // For Week 6 homework
     void generate_print_instructions();
     void unroll_instructions();
+    void save_smi_to_file();
 
     ProcessState get_state() const { return current_state.load(); }
     void set_state(const ProcessState state) { current_state.store(state); }

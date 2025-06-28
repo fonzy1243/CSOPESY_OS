@@ -77,7 +77,8 @@ private:
         std::uniform_int_distribution<>& sleep_dis,
         int depth,
         int& instruction_count,
-        int max_instructions
+        int max_instructions,
+        int cumulative_multiplier
     );
 };
 

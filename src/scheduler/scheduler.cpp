@@ -183,11 +183,12 @@ std::string Scheduler::get_status_string()
      std::string result = "-----------------------------\n";
      result += "CPU Utilization Report:\n";
 
+
      int cores_used;
      {
          std::lock_guard lock(running_mutex);
          cores_used = std::count_if(running_processes.begin(), running_processes.end(), [](const auto &p) {
-             return p->get_state() == ProcessState::eRunning;
+             return p->get_state() == ProcessState::eRunning && p->get_assigned_core() != 9999;
          });
      }
 
@@ -202,8 +203,9 @@ std::string Scheduler::get_status_string()
      result += "Running processes:\n";
      auto running_processes = get_running();
      for (const auto& process : running_processes) {
-         if (process->get_state() == ProcessState::eRunning)
+         if (process->get_state() == ProcessState::eRunning && process->get_assigned_core() != 9999) {
              result += std::format("{}\n", process->get_status_string());
+         }
      }
 
      result += "\nFinished processes:\n";

@@ -251,7 +251,7 @@ void ApheliOS::exit_screen()
 void ApheliOS::create_session(const std::string &session_name, bool has_leader, std::shared_ptr<Process> process)
  {
      auto new_session = std::make_shared<Session>();
-     new_session->id = current_sid++;
+     new_session->id = process->id;
      new_session->name = session_name;
 
      auto now = std::chrono::system_clock::now();
@@ -414,13 +414,13 @@ void ApheliOS::process_generation_worker()
 
         if (current_tick > last_gen_tick && (current_tick % batch_frequency) == 0) {
             // Generate a new dummy process
-            std::string process_name = std::format("p{:02d}", process_counter++);
+            std::string process_name = std::format("p{:02d}", current_pid);  // Use current_pid instead of process_counter++
 
             auto new_process = std::make_shared<Process>(current_pid++, process_name, memory);
 
             // Create a session for this process (but don't make it current)
             auto new_session = std::make_shared<Session>();
-            new_session->id = current_sid++;
+            new_session->id = new_process->id;  // Use the process ID instead of current_sid++
             new_session->name = process_name;
 
             auto now = std::chrono::system_clock::now();

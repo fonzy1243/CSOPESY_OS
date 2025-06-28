@@ -212,6 +212,28 @@ void ApheliOS::create_screen(const std::string &name)
 
      auto new_process = std::make_shared<Process>(current_pid++, name, this->memory);
      create_session(name, false, new_process);
+
+     int instruction_count = 0;
+
+     std::random_device rd;
+     std::mt19937 gen(rd());
+     std::uniform_int_distribution<> add_value_dis(1, 10);
+     while ( instruction_count < config->max_ins) {
+         int rand_val = add_value_dis(gen);
+
+         auto print_instruction = std::make_shared<PrintInstruction>("Value from: ", "x");
+         new_process->add_instruction(print_instruction);
+         instruction_count++;
+         if (instruction_count == config->max_ins) {
+             break;
+         }
+
+         auto add_instruction = std::make_shared<AddInstruction>("x", "x", rand_val);
+         new_process->add_instruction(add_instruction);
+         instruction_count++;
+     }
+
+
      scheduler->add_process(new_process);
 
 

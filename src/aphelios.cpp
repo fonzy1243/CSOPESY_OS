@@ -26,6 +26,7 @@ ApheliOS::~ApheliOS()
      running.store(false);
 
      stop_process_generation();
+     scheduler->stop();
 
      if (cpu_clock_thread.joinable()) {
          cpu_clock_thread.join();
@@ -250,7 +251,7 @@ void ApheliOS::exit_screen()
 void ApheliOS::create_session(const std::string &session_name, bool has_leader, std::shared_ptr<Process> process)
  {
      auto new_session = std::make_shared<Session>();
-     new_session->id = current_sid++;
+     new_session->id = process->id;
      new_session->name = session_name;
 
      auto now = std::chrono::system_clock::now();
@@ -406,22 +407,20 @@ void ApheliOS::process_generation_worker()
     auto cpu_tick_start = std::chrono::steady_clock::now();
     int tick_count = 0;
 
-    while (scheduler_generating_processes.load()) {
-        auto current_time = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - cpu_tick_start);
- 
-        // Each CPU tick is approximately 10ms for reasonable timing
-        int current_tick = static_cast<int>(elapsed.count() / 10);
+     uint64_t last_gen_tick = 0;
 
-        if (current_tick > tick_count && (current_tick % batch_frequency) == 0) {
+    while (scheduler_generating_processes.load()) {
+        uint64_t current_tick = get_cpu_tick();
+
+        if (current_tick > last_gen_tick && (current_tick % batch_frequency) == 0) {
             // Generate a new dummy process
-            std::string process_name = std::format("p{:02d}", process_counter++);
+            std::string process_name = std::format("p{:02d}", current_pid);  // Use current_pid instead of process_counter++
 
             auto new_process = std::make_shared<Process>(current_pid++, process_name, memory);
 
             // Create a session for this process (but don't make it current)
             auto new_session = std::make_shared<Session>();
-            new_session->id = current_sid++;
+            new_session->id = new_process->id;  // Use the process ID instead of current_sid++
             new_session->name = process_name;
 
             auto now = std::chrono::system_clock::now();

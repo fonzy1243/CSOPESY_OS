@@ -80,7 +80,7 @@ void Scheduler::scheduler_loop()
 
          std::unique_lock ready_lock(ready_mutex);
 
-         if (scheduler_cv.wait_for(ready_lock, std::chrono::milliseconds(1), [this] {
+         if (scheduler_cv.wait_for(ready_lock, std::chrono::microseconds(1), [this] {
              return !ready_queue.empty() || !running.load();
          })) {
              if (!running.load()) break;
@@ -180,17 +180,15 @@ std::vector<std::shared_ptr<Process>> Scheduler::get_running()
 
 std::string Scheduler::get_status_string()
  {
+     std::lock_guard lock(running_mutex);
+     std::lock_guard finished_lock(finished_mutex);
      std::string result = "-----------------------------\n";
      result += "CPU Utilization Report:\n";
 
 
-     int cores_used = 0;
-     {
-         std::lock_guard lock(running_mutex);
-         cores_used = std::count_if(running_processes.begin(), running_processes.end(), [](const auto &p) {
+     int cores_used = std::count_if(running_processes.begin(), running_processes.end(), [](const auto &p) {
              return p->get_state() == ProcessState::eRunning && p->get_assigned_core() != 9999;
          });
-     }
 
      int cores_available = static_cast<int>(num_cores) - cores_used;
      float utilization = (num_cores > 0) ? (static_cast<float>(cores_used) / num_cores) * 100.0f : 0.0f;
@@ -201,18 +199,16 @@ std::string Scheduler::get_status_string()
      result += "-----------------------------\n";
 
      result += "Running processes:\n";
-     auto running_processes = get_running();
-     for (const auto& process : running_processes) {
-         if (process->get_state() == ProcessState::eRunning && process->get_assigned_core() != 9999) {
-             result += std::format("{}\n", process->get_status_string());
+         for (const auto& process : this->running_processes) {
+             if (process->get_state() == ProcessState::eRunning && process->get_assigned_core() != 9999) {
+                 result += std::format("{}\n", process->get_status_string());
+             }
          }
-     }
 
      result += "\nFinished processes:\n";
-     auto finished = get_finished();
-     for (const auto& process : finished) {
-         result += std::format("{}\n", process->get_status_string());
-     }
+         for (const auto& process : this->finished_processes) {
+             result += std::format("{}\n", process->get_status_string());
+         }
      result += "-----------------------------\n";
 
      return result;

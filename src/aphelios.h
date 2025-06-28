@@ -45,14 +45,12 @@ private:
     std::optional<CPUConfig> config;
     bool initialized{false};
     uint16_t current_pid{0};
-    uint16_t current_sid{0};
 
     void run_system_clock();
     
     // Process generation
     std::atomic<bool> scheduler_generating_processes{false};
     std::thread process_generation_thread;
-    uint16_t process_counter{1};
 
     void create_screen(const std::string& name);
     void switch_screen(const std::string& name);

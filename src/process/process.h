@@ -49,6 +49,7 @@ public:
     std::unordered_map<std::string, size_t> symbol_table;
 
     std::ofstream log_file;
+    mutable std::mutex log_mutex;
 
     Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory);
     ~Process();

@@ -26,8 +26,10 @@ void PrintInstruction::execute(Process &process)
     std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"PRINT {}\"",
         tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
         core_id, final_message);
-    process.print_logs.push_back(log_entry);
 
+    std::lock_guard lock(process.log_mutex);
+
+    process.print_logs.push_back(log_entry);
     process.output_buffer.push_back("[PRINT] " + final_message);
 }
 
@@ -52,6 +54,8 @@ void DeclareInstruction::execute(Process &process)
     std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"DECLARE {} = {}\"",
         tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
         core_id, var_name, value);
+
+    std::lock_guard lock(process.log_mutex);
 
     // Add to print log for viewing with process-smi
     process.print_logs.push_back(log_entry);
@@ -102,6 +106,8 @@ void AddInstruction::execute(Process &process)
     std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"ADD {} = {} + {} = {}\"",
     tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
     core_id, var1, val2_str, val3_str, static_cast<uint16_t>(result));
+
+    std::lock_guard lock(process.log_mutex);
 
     // Add to print_logs for viewing
     process.print_logs.push_back(log_entry);
@@ -155,6 +161,8 @@ void SubtractInstruction::execute(Process &process)
      tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
      core_id, var1, val2_str, val3_str, result);
 
+    std::lock_guard lock(process.log_mutex);
+
     // Add to print_logs for viewing
     process.print_logs.push_back(log_entry);
     process.output_buffer.push_back(log_entry);
@@ -182,6 +190,8 @@ void SleepInstruction::execute(Process &process)
     std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"SLEEP  start: {} end: {}\"",
      tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
      core_id, sleep_start, sleep_until);
+
+    std::lock_guard lock(process.log_mutex);
 
     // Add to print logs for viewing
     process.print_logs.push_back(log_entry);

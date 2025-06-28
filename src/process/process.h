@@ -61,7 +61,7 @@ public:
         std::forward<F>(program)();
     }
 
-    void execute(uint16_t core_id, uint32_t quantum = 0, uint32_t delay = 0);
+    void execute(uint16_t core_id, std::atomic<bool>& is_running, uint32_t quantum = 0, uint32_t delay = 0);
     void add_instruction(std::shared_ptr<IInstruction> instruction);
     // For Week 6 homework
     void generate_print_instructions();

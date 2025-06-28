@@ -131,7 +131,7 @@ void Scheduler::cpu_worker(uint16_t core_id)
          if (process_to_run) {
              uint32_t ticks_to_run = (scheduler_type == SchedulerType::FCFS) ? 0 : quantum_cycles;
 
-             process_to_run->execute(core_id, ticks_to_run, delay);
+             process_to_run->execute(core_id, running, ticks_to_run, delay);
 
              {
                  std::lock_guard lock(running_mutex);

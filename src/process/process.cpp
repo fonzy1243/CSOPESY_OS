@@ -14,14 +14,14 @@ Process::Process(const uint16_t id, const std::string &name, const std::shared_p
 
  Process::~Process(){}
 
-void Process::execute(uint16_t core_id, uint32_t quantum, uint32_t delay)
+void Process::execute(uint16_t core_id, std::atomic<bool>& is_running, uint32_t quantum, uint32_t delay)
 {
     start_time = std::chrono::system_clock::now();
     int ticks_executed = 0;
 
     const bool run_indefinitely = quantum == 0;
 
-    while (current_instruction < (int)instructions.size() && (run_indefinitely || ticks_executed < quantum)) {
+    while (is_running.load() && current_instruction < (int)instructions.size() && (run_indefinitely || ticks_executed < quantum)) {
         if (get_state() == ProcessState::eWaiting) break;
 
         uint64_t last_tick = get_cpu_tick();

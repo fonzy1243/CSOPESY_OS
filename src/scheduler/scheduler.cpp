@@ -43,9 +43,9 @@ void Scheduler::stop()
      }
 
      for (auto& thread : cpu_threads) {
-         if (thread.joinable()) {
+         // if (thread.joinable()) {
              thread.join();
-         }
+         // }
      }
 
      cpu_threads.clear();

@@ -180,14 +180,43 @@ std::vector<std::shared_ptr<Process>> Scheduler::get_running()
 
 std::string Scheduler::get_status_string()
  {
-     std::lock_guard lock(running_mutex);
-     std::lock_guard finished_lock(finished_mutex);
+     auto running = get_running();
+     auto finished = get_finished();
+
+     struct ProcessSnapshot
+     {
+         std::string status_string;
+         ProcessState state;
+         int assigned_core;
+     };
+
+     std::vector<ProcessSnapshot> running_snapshots;
+     std::vector<ProcessSnapshot> finished_snapshots;
+
+     // Capture current state of running processes
+     for (const auto& process : running) {
+         running_snapshots.push_back({
+             process->get_status_string(),
+             process->get_state(),
+             process->get_assigned_core()
+         });
+     }
+
+     // Capture current state of finished processes
+     for (const auto& process : finished) {
+         finished_snapshots.push_back({
+             process->get_status_string(),
+             process->get_state(),
+             process->get_assigned_core()
+         });
+     }
+
      std::string result = "-----------------------------\n";
      result += "CPU Utilization Report:\n";
 
 
-     int cores_used = std::count_if(running_processes.begin(), running_processes.end(), [](const auto &p) {
-             return p->get_state() == ProcessState::eRunning && p->get_assigned_core() != 9999;
+     int cores_used = std::count_if(running_snapshots.begin(), running_snapshots.end(), [](const auto &snapshot) {
+         return snapshot.state == ProcessState::eRunning && snapshot.assigned_core != 9999;
          });
 
      int cores_available = static_cast<int>(num_cores) - cores_used;
@@ -199,15 +228,15 @@ std::string Scheduler::get_status_string()
      result += "-----------------------------\n";
 
      result += "Running processes:\n";
-         for (const auto& process : this->running_processes) {
-             if (process->get_state() == ProcessState::eRunning && process->get_assigned_core() != 9999) {
-                 result += std::format("{}\n", process->get_status_string());
+         for (const auto& snapshot : running_snapshots) {
+             if (snapshot.state == ProcessState::eRunning && snapshot.assigned_core != 9999) {
+                 result += std::format("{}\n", snapshot.status_string);
              }
          }
 
      result += "\nFinished processes:\n";
-         for (const auto& process : this->finished_processes) {
-             result += std::format("{}\n", process->get_status_string());
+         for (const auto& snapshot : finished_snapshots) {
+             result += std::format("{}\n", snapshot.status_string);
          }
      result += "-----------------------------\n";
 

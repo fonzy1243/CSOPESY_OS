@@ -24,6 +24,10 @@ private:
     std::vector<std::shared_ptr<Process>> running_processes;
     std::vector<std::shared_ptr<Process>> finished_processes;
 
+    // Per-core queues for better performance and reduced contention
+    std::vector<std::queue<std::shared_ptr<Process>>> per_core_queues;
+    std::vector<std::unique_ptr<std::mutex>> per_core_mutexes;
+
     std::mutex ready_mutex;
     std::mutex running_mutex;
     std::mutex waiting_mutex;

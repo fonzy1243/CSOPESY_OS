@@ -244,7 +244,7 @@ void Shell::shell_loop(bool print_header)
             input_field->Render() | selectionForegroundColor(Color::Aquamarine1) | flex
         }), 
         text("")   
-    }) | border;  
+    });  
     
     return vbox({
         render_output() | flex,
@@ -315,6 +315,7 @@ void Shell::shell_loop(bool print_header)
             if (autoscroll) {
                 scroll_offset = std::max(0, total_lines - max_lines);
             }
+            screen.PostEvent(Event::Custom);
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

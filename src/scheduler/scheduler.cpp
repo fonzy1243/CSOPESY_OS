@@ -186,7 +186,9 @@ std::string Scheduler::get_status_string()
      int cores_used;
      {
          std::lock_guard lock(running_mutex);
-         cores_used = static_cast<int>(running_processes.size());
+         cores_used = std::count_if(running_processes.begin(), running_processes.end(), [](const auto &p) {
+             return p->get_state() == ProcessState::eRunning;
+         });
      }
 
      int cores_available = static_cast<int>(num_cores) - cores_used;

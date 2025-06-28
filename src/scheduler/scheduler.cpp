@@ -10,6 +10,12 @@
  Scheduler::Scheduler(uint16_t num_cores) : num_cores(num_cores)
  {
      cpu_threads.reserve(num_cores);
+     // Initialize per-core ready queues for better performance
+     per_core_queues.resize(num_cores);
+     per_core_mutexes.resize(num_cores);
+     for (uint16_t i = 0; i < num_cores; ++i) {
+         per_core_mutexes[i] = std::make_unique<std::mutex>();
+     }
  }
 
 
@@ -53,11 +59,12 @@ void Scheduler::stop()
 
 void Scheduler::scheduler_loop()
  {
+     uint16_t next_core = 0; // Round-robin assignment to cores
+     
      while (running.load()) {
          // Check waiting processes and move them if they are done sleeping
          {
              std::lock_guard waiting_lock(waiting_mutex);
-             std::unique_lock ready_lock(ready_mutex);
              std::queue<std::shared_ptr<Process>> still_waiting;
              while (!waiting_queue.empty()) {
                  auto process = waiting_queue.front();
@@ -65,49 +72,63 @@ void Scheduler::scheduler_loop()
 
                  if (get_cpu_tick() >= process->sleep_until_tick.load()) {
                      process->set_state(ProcessState::eReady);
-                     ready_queue.push(process);
+                     
+                     // Directly assign to a specific core's queue for better performance
+                     {
+                         std::lock_guard core_lock(*per_core_mutexes[next_core]);
+                         per_core_queues[next_core].push(process);
+                     }
+                     next_core = (next_core + 1) % num_cores;
                  } else {
                      still_waiting.push(process);
                  }
              }
-
              waiting_queue = std::move(still_waiting);
          }
 
-         if (!ready_queue.empty()) {
-             scheduler_cv.notify_all();
-         }
-
-         std::unique_lock ready_lock(ready_mutex);
-
-         if (scheduler_cv.wait_for(ready_lock, std::chrono::microseconds(1), [this] {
-             return !ready_queue.empty() || !running.load();
-         })) {
-             if (!running.load()) break;
-
-             std::lock_guard running_lock(running_mutex);
-
-             while (!ready_queue.empty() && static_cast<int>(running_processes.size()) < num_cores) {
+         // Move processes from global ready queue to per-core queues
+         {
+             std::lock_guard ready_lock(ready_mutex);
+             while (!ready_queue.empty()) {
                  auto process = ready_queue.front();
                  ready_queue.pop();
-
-                 running_processes.push_back(process);
+                 
+                 // Assign to core in round-robin fashion
+                 {
+                     std::lock_guard core_lock(*per_core_mutexes[next_core]);
+                     per_core_queues[next_core].push(process);
+                 }
+                 next_core = (next_core + 1) % num_cores;
              }
          }
 
-         ready_lock.unlock();
+         // Very short sleep to prevent busy waiting but maintain responsiveness
+         std::this_thread::sleep_for(std::chrono::microseconds(10));
      }
  }
 
 void Scheduler::add_process(std::shared_ptr<Process> process)
  {
-     std::lock_guard lock(ready_mutex);
-
      process->unroll_instructions();
-
-     ready_queue.push(process);
      process->set_state(ProcessState::eReady);
-     scheduler_cv.notify_one();
+
+     // Find the core with the least work for load balancing
+     uint16_t best_core = 0;
+     size_t min_queue_size = SIZE_MAX;
+     
+     for (uint16_t i = 0; i < num_cores; ++i) {
+         std::lock_guard core_lock(*per_core_mutexes[i]);
+         if (per_core_queues[i].size() < min_queue_size) {
+             min_queue_size = per_core_queues[i].size();
+             best_core = i;
+         }
+     }
+     
+     // Add process to the least loaded core's queue
+     {
+         std::lock_guard core_lock(*per_core_mutexes[best_core]);
+         per_core_queues[best_core].push(process);
+     }
  }
 
 
@@ -116,11 +137,25 @@ void Scheduler::cpu_worker(uint16_t core_id)
      while (running.load()) {
          std::shared_ptr<Process> process_to_run = nullptr;
 
+         // First, check this core's dedicated queue
          {
-             std::lock_guard lock(running_mutex);
-             for (auto it = running_processes.begin(); it != running_processes.end(); ++it) {
-                 if ((*it)->get_state() == ProcessState::eReady && (*it)->get_assigned_core() == 9999) {
-                     process_to_run = *it;
+             std::lock_guard core_lock(*per_core_mutexes[core_id]);
+             if (!per_core_queues[core_id].empty()) {
+                 process_to_run = per_core_queues[core_id].front();
+                 per_core_queues[core_id].pop();
+                 process_to_run->set_assigned_core(core_id);
+                 process_to_run->set_state(ProcessState::eRunning);
+             }
+         }
+
+         // If no process in dedicated queue, try work stealing from other cores
+         if (!process_to_run) {
+             for (uint16_t i = 1; i < num_cores; ++i) {
+                 uint16_t steal_from = (core_id + i) % num_cores;
+                 std::lock_guard core_lock(*per_core_mutexes[steal_from]);
+                 if (!per_core_queues[steal_from].empty()) {
+                     process_to_run = per_core_queues[steal_from].front();
+                     per_core_queues[steal_from].pop();
                      process_to_run->set_assigned_core(core_id);
                      process_to_run->set_state(ProcessState::eRunning);
                      break;
@@ -129,15 +164,21 @@ void Scheduler::cpu_worker(uint16_t core_id)
          }
 
          if (process_to_run) {
+             // Add to running processes for monitoring
+             {
+                 std::lock_guard running_lock(running_mutex);
+                 running_processes.push_back(process_to_run);
+             }
+
              uint32_t ticks_to_run = (scheduler_type == SchedulerType::FCFS) ? 0 : quantum_cycles;
 
              process_to_run->execute(core_id, ticks_to_run, delay);
 
+             // Remove from running processes
              {
                  std::lock_guard lock(running_mutex);
                  std::erase(running_processes, process_to_run);
              }
-
 
              const bool finished = (process_to_run->current_instruction.load() >= (int)process_to_run->instructions.size());
 
@@ -147,21 +188,23 @@ void Scheduler::cpu_worker(uint16_t core_id)
                  process_to_run->set_assigned_core(9999);
                  finished_processes.push_back(process_to_run);
              } else if (process_to_run->get_state() == ProcessState::eWaiting) {
-                 // Still waiting (e.g., sleeping), keep in running_processes
+                 // Still waiting (e.g., sleeping)
                  std::lock_guard waiting_lock(waiting_mutex);
                  process_to_run->set_assigned_core(9999);
                  waiting_queue.push(process_to_run);
              } else {
                  // Preempted due to quantum expiration, move back to ready queue
                  process_to_run->set_state(ProcessState::eReady);
-                 std::lock_guard lock(ready_mutex);
-                 process_to_run->set_assigned_core(9999);
-                 ready_queue.push(process_to_run);
-                 scheduler_cv.notify_one();
+                 // Add back to this core's queue for better cache locality
+                 {
+                     std::lock_guard core_lock(*per_core_mutexes[core_id]);
+                     process_to_run->set_assigned_core(9999);
+                     per_core_queues[core_id].push(process_to_run);
+                 }
              }
          } else {
-             // No process to run, sleep briefly to avoid busy waiting
-             std::this_thread::sleep_for(std::chrono::milliseconds(1));
+             // No process to run, but don't sleep - just yield CPU briefly
+             std::this_thread::yield();
          }
      }
  }

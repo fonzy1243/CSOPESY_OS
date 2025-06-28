@@ -533,12 +533,6 @@ void ApheliOS::process_generation_worker()
                          break;
                      }
                  }
-
-                // Add delays between instructions if configured (TODO: change this to delay instruction)
-                if (delays_per_exec > 0) {
-                    auto delay_instruction = std::make_shared<SleepInstruction>(delays_per_exec);
-                    new_process->add_instruction(delay_instruction);
-                }
             }
 
             scheduler->add_process(new_process);

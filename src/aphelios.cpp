@@ -211,9 +211,18 @@ void ApheliOS::create_screen(const std::string &name)
      }
 
      auto new_process = std::make_shared<Process>(current_pid++, name, this->memory);
+     // First-fit memory allocation
+     size_t mem_size = config ? config->min_mem_per_proc : 4096;
+     auto alloc = memory->allocate_block(new_process->id, mem_size);
+     if (!alloc) {
+         shell->output_buffer.push_back("[ERROR] Not enough memory to start process. Process moved to end of ready queue.");
+         // TODO: Optionally, add to ready queue for retry later (not started)
+         scheduler->add_process(new_process); // Will be retried by scheduler
+         return;
+     }
+     new_process->mem_block_start = *alloc;
      create_session(name, false, new_process);
      scheduler->add_process(new_process);
-
 
      shell->output_buffer.clear();
 
@@ -417,6 +426,16 @@ void ApheliOS::process_generation_worker()
             std::string process_name = std::format("p{:02d}", current_pid);  // Use current_pid instead of process_counter++
 
             auto new_process = std::make_shared<Process>(current_pid++, process_name, memory);
+            // First-fit memory allocation
+            auto alloc = memory->allocate_block(new_process->id, config ? config->min_mem_per_proc : 4096);
+            if (!alloc) {
+                // Not enough memory, move to end of ready queue for retry
+                scheduler->add_process(new_process);
+                last_gen_tick = current_tick;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+            new_process->mem_block_start = *alloc;
 
             // Create a session for this process (but don't make it current)
             auto new_session = std::make_shared<Session>();

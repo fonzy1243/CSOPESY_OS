@@ -6,6 +6,12 @@
 #include <filesystem>
 #include "scheduler.h"
 #include "../cpu_tick.h"
+#include "../memory/memory.h" // Added for global_memory_ptr
+#include <iomanip>
+#include <ctime>
+#include <sstream>
+
+extern std::shared_ptr<Memory> global_memory_ptr; // Add this at the top if needed
 
  Scheduler::Scheduler(uint16_t num_cores) : num_cores(num_cores)
  {
@@ -134,6 +140,7 @@ void Scheduler::add_process(std::shared_ptr<Process> process)
 
 void Scheduler::cpu_worker(uint16_t core_id)
  {
+     static std::atomic<uint64_t> global_quantum_counter{0};
      while (running.load()) {
          std::shared_ptr<Process> process_to_run = nullptr;
 
@@ -187,6 +194,10 @@ void Scheduler::cpu_worker(uint16_t core_id)
                  std::lock_guard finished_lock(finished_mutex);
                  process_to_run->set_assigned_core(9999);
                  finished_processes.push_back(process_to_run);
+                 // Free memory block
+                 if (process_to_run->mem_block_start != static_cast<size_t>(-1)) {
+                     process_to_run->memory->free_block(process_to_run->id);
+                 }
              } else if (process_to_run->get_state() == ProcessState::eWaiting) {
                  // Still waiting (e.g., sleeping)
                  std::lock_guard waiting_lock(waiting_mutex);
@@ -200,6 +211,13 @@ void Scheduler::cpu_worker(uint16_t core_id)
                      std::lock_guard core_lock(*per_core_mutexes[core_id]);
                      process_to_run->set_assigned_core(9999);
                      per_core_queues[core_id].push(process_to_run);
+                 }
+             }
+             // Quantum cycle tracking and memory snapshot
+             if (scheduler_type == SchedulerType::RR) {
+                 uint64_t prev = global_quantum_counter.fetch_add(1) + 1;
+                 if (prev % quantum_cycles == 0) {
+                     output_memory_snapshot(prev / quantum_cycles);
                  }
              }
          } else {
@@ -270,4 +288,49 @@ void Scheduler::write_utilization_report()
          out.close();
      }
  }
+
+void output_memory_snapshot(uint64_t quantum_cycle) {
+    if (!global_memory_ptr) return;
+    auto& memory = *global_memory_ptr;
+    auto blocks = memory.get_allocated_blocks();
+    auto free_blocks = memory.get_free_blocks();
+    size_t min_block_size = 4096; // Use mem_per_proc if available
+    size_t ext_frag = memory.calculate_external_fragmentation(min_block_size);
+    size_t total_in_mem = blocks.size();
+    // Timestamp
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+    localtime_s(&tm, &now_c);
+    std::ostringstream oss;
+    oss << "Timestamp: (" << std::put_time(&tm, "%m/%d/%Y %H:%M:%S") << ")\n";
+    oss << "Number of processes in memory: " << total_in_mem << "\n";
+    oss << "Total external fragmentation in KB: " << (ext_frag / 1024) << "\n";
+    // Print memory map (descending address)
+    oss << "----end---- = " << memory.size() << "\n";
+    size_t addr = memory.size();
+    // Sort blocks and free_blocks by start descending
+    std::vector<Memory::Block> all_blocks = blocks;
+    all_blocks.insert(all_blocks.end(), free_blocks.begin(), free_blocks.end());
+    std::sort(all_blocks.begin(), all_blocks.end(), [](const auto& a, const auto& b) { return a.start > b.start; });
+    for (const auto& b : all_blocks) {
+        if (b.free) {
+            oss << b.start + b.size << "\n";
+            oss << "(free)\n";
+            oss << b.start << "\n";
+        } else {
+            oss << b.start + b.size << "\n";
+            oss << "P" << b.process_id << "\n";
+            oss << b.start << "\n";
+        }
+    }
+    oss << "----start---- = 0\n";
+    // Write to file
+    std::string fname = std::format("memory_stamp_{}.txt", quantum_cycle);
+    std::ofstream out(fname);
+    if (out.is_open()) {
+        out << oss.str();
+        out.close();
+    }
+}
 

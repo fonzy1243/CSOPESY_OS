@@ -179,6 +179,10 @@ bool ApheliOS::initialize(const std::string& config_file)
      shell->output_buffer.emplace_back(std::format("  Quantum: {}", config->quantum_cycles));
      shell->output_buffer.emplace_back(std::format("  Batch Process Freq: {}", config->batch_process_freq));
      shell->output_buffer.emplace_back(std::format("  Min/Max Instructions: {}/{}", config->min_ins, config->max_ins));
+     shell->output_buffer.emplace_back(std::format("  Max Overall Memory: {}", config->max_overall_mem));
+     shell->output_buffer.emplace_back(std::format("  Memory Per Frame: {}", config->mem_per_frame));
+     shell->output_buffer.emplace_back(std::format("  Memory Per Process: {}", config->mem_per_proc));
+
 
      return true;
  }

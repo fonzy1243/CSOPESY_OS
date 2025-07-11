@@ -63,6 +63,19 @@ std::expected<CPUConfig, ConfigError> ConfigReader::parse_config()
         config.delays_per_exec = *delays;
     }
 
+
+    if (auto max_mem = get_value<int>("max-overall-mem")) {
+        config.max_overall_mem = *max_mem;
+    }
+
+    if (auto mem_frame = get_value<int>("mem-per-frame")) {
+        config.mem_per_frame = *mem_frame;
+    }
+
+    if (auto mem_proc = get_value<int>("mem-per-proc")) {
+        config.mem_per_proc = *mem_proc;
+    }
+
     if (!config.validate()) {
         return std::unexpected(ConfigError::InvalidValue);
     }

@@ -55,8 +55,18 @@ struct CPUConfig
     int max_ins{};
     int delays_per_exec{};
 
+    // week 10
+    int max_overall_mem;
+    int mem_per_frame;
+    int mem_per_proc;
+
     [[nodiscard]] bool validate() const
     {
+
+        auto is_valid_memory = [](int n) {
+            return n >= (1 << 6) && n <= (1 << 16) && (n & (n - 1)) == 0;
+        };
+
         return num_cpu >= 1 && num_cpu <= 128 &&
                (scheduler == "fcfs" || scheduler == "rr") &&
                quantum_cycles >= 1 && quantum_cycles <= std::numeric_limits<int>::max() &&
@@ -64,7 +74,11 @@ struct CPUConfig
                min_ins >= 1 && min_ins <= std::numeric_limits<int>::max() &&
                max_ins >= 1 && max_ins <= std::numeric_limits<int>::max() &&
                min_ins <= max_ins &&
-               delays_per_exec >= 0 && delays_per_exec <= std::numeric_limits<int>::max();
+               delays_per_exec >= 0 && delays_per_exec <= std::numeric_limits<int>::max() &&
+
+               // week 10
+               mem_per_proc <= max_overall_mem &&
+               mem_per_frame <= max_overall_mem;
     }
 };
 

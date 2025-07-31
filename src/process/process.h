@@ -39,6 +39,7 @@ public:
     std::atomic<uint16_t> assigned_core{9999};
     std::deque<std::string> output_buffer;
     std::atomic<uint64_t> sleep_until_tick{0};
+    size_t mem_block_start = static_cast<size_t>(-1); // Start address of allocated memory block, -1 if not allocated
 
     std::chrono::system_clock::time_point creation_time;
     std::chrono::system_clock::time_point start_time;

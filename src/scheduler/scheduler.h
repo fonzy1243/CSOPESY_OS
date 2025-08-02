@@ -73,6 +73,4 @@ public:
     SchedulerType get_scheduler_type() const { return scheduler_type; }
 };
 
-void output_memory_snapshot(uint64_t quantum_cycle);
-
 #endif //SCHEDULER_H

@@ -212,9 +212,6 @@ void Scheduler::cpu_worker(uint16_t core_id)
              // Quantum cycle tracking and memory snapshot
              if (scheduler_type == SchedulerType::RR) {
                  uint64_t prev = global_quantum_counter.fetch_add(1) + 1;
-                 if (prev % quantum_cycles == 0) {
-                     output_memory_snapshot(prev / quantum_cycles);
-                 }
              }
          } else {
              // No process to run, but don't sleep - just yield CPU briefly

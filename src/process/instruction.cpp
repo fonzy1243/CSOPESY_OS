@@ -13,8 +13,8 @@ void PrintInstruction::execute(Process &process)
 
     std::string final_message = message;
     if (has_variable) {
-        size_t var_address = process.memory->get_var_address(process.symbol_table, variable_name);
-        uint16_t var_value = process.memory->read_word(var_address);
+        size_t var_address = process.get_var_address(variable_name);
+        uint16_t var_value = process.read_memory_word(var_address);
 
         final_message = message + variable_name + " = " + std::to_string(var_value);
     }
@@ -42,8 +42,8 @@ void DeclareInstruction::execute(Process &process)
 {
     uint16_t core_id = process.assigned_core.load();
 
-    size_t address = process.memory->get_var_address(process.symbol_table, var_name);
-    process.memory->write_word(address, value);
+    size_t address = process.get_var_address(var_name);
+    process.write_memory_word(address, value);
 
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
@@ -70,23 +70,23 @@ std::string DeclareInstruction::get_type_name() const
 void AddInstruction::execute(Process &process)
 {
     uint16_t core_id = process.assigned_core.load();
-    size_t var1_address = process.memory->get_var_address(process.symbol_table, var1);
+    size_t var1_address = process.get_var_address(var1);
 
     std::string val2_str, val3_str;
 
     if (use_val2) {
         val2_str = std::to_string(val2);
     } else {
-        const size_t var2_address = process.memory->get_var_address(process.symbol_table, var2);
-        val2 = process.memory->read_word(var2_address);
+        const size_t var2_address = process.get_var_address(var2);
+        val2 = process.read_memory_word(var2_address);
         val2_str = std::format("{}({})", var2, val2);
     }
 
     if (use_val3) {
         val3_str = std::to_string(val3);
     } else {
-        const size_t var3_address = process.memory->get_var_address(process.symbol_table, var3);
-        val3 = process.memory->read_word(var3_address);
+        const size_t var3_address = process.get_var_address(var3);
+        val3 = process.read_memory_word(var3_address);
         val3_str = std::format("{}({})", var3, val3);
     }
 
@@ -95,7 +95,7 @@ void AddInstruction::execute(Process &process)
         result = UINT16_MAX; // clamp result
     }
 
-    process.memory->write_word(var1_address, static_cast<uint16_t>(result));
+    process.write_memory_word(var1_address, static_cast<uint16_t>(result));
 
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
@@ -122,23 +122,23 @@ std::string AddInstruction::get_type_name() const
 void SubtractInstruction::execute(Process &process)
 {
     uint16_t core_id = process.assigned_core.load();
-    size_t var1_address = process.memory->get_var_address(process.symbol_table, var1);
+    size_t var1_address = process.get_var_address(var1);
 
     std::string val2_str, val3_str;
 
     if (use_val2) {
         val2_str = std::to_string(val2);
     } else {
-        const size_t var2_address = process.memory->get_var_address(process.symbol_table, var2);
-        val2 = process.memory->read_word(var2_address);
+        const size_t var2_address = process.get_var_address(var2);
+        val2 = process.read_memory_word(var2_address);
         val2_str = std::format("{}({})", var2, val2);
     }
 
     if (use_val3) {
         val3_str = std::to_string(val3);
     } else {
-        const size_t var3_address = process.memory->get_var_address(process.symbol_table, var3);
-        val3 = process.memory->read_word(var3_address);
+        const size_t var3_address = process.get_var_address(var3);
+        val3 = process.read_memory_word(var3_address);
         val3_str = std::format("{}({})", var3, val3);
     }
 
@@ -149,7 +149,7 @@ void SubtractInstruction::execute(Process &process)
         result = 0;
     }
 
-    process.memory->write_word(var1_address, result);
+    process.write_memory_word(var1_address, result);
 
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);

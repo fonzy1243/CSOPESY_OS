@@ -200,34 +200,58 @@ void ApheliOS::handle_screen_cmd(const std::string &input)
      auto args = std::vector(words.begin(), words.end());
      if (args.empty()) return;
 
-     if (args[0] == "-S" && args.size() > 1) {
-         create_screen(std::string(args[1]));
+     if ((args[0] == "-S" || args[0] == "-s") && args.size() > 2) {
+         const std::string& process_name = std::string(args[1]);
+         size_t memory_size = 0;
+         try {
+             memory_size = std::stoul(std::string(args[2]));
+         } catch (...) {
+             shell->output_buffer.emplace_back("Error: invalid memory allocation");
+             return;
+         }
+
+         // Check that memory_size is within [2^64, 2^216] and is power of 2
+        if (memory_size < 64 || memory_size > 65536 || (memory_size & (memory_size - 1)) != 0) {
+             shell->output_buffer.emplace_back("Error: invalid memory allocation");
+             return;
+         }
+         create_screen(process_name, memory_size);
+
      } else if (args[0] == "-r" && args.size() > 1) {
          switch_screen(std::string(args[1]));
      } else if (args[0] == "-ls") {
          std::string status = scheduler->get_status_string();
          shell->add_multiline_output(status);
+     } else {
+         shell->output_buffer.emplace_back("Error: Wrong usage of the screen command");
      }
  }
 
 
-void ApheliOS::create_screen(const std::string &name)
+void ApheliOS::create_screen(const std::string &name, const size_t memory_size)
  {
      if (current_session) {
          current_session->output_buffer = shell->output_buffer;
      }
 
-     size_t process_memory = config ? config->min_mem_per_proc : 4096;
+     size_t process_memory = memory_size;
 
+     // Check if there is enough memory to allocate this process
      if (!memory->can_allocate_process(process_memory)) {
-         shell->output_buffer.emplace_back(std::format("Error: Not enough memory to create process '{}'. Available: {} bytes, Required: {} bytes", name, memory->get_available_memory(), process_memory));
+         shell->output_buffer.emplace_back(std::format(
+             "Error: Not enough memory to create process '{}'. Available: {} bytes, Required: {} bytes",
+             name, memory->get_available_memory(), process_memory
+         ));
          return;
      }
 
-     auto new_process = std::make_shared<Process>(current_pid++, name, this->memory);
+     auto new_process = std::make_shared<Process>(current_pid++, name, memory);
 
+     // Try to create the process's memory space
      if (!memory->create_process_space(new_process->id, process_memory)) {
-         shell->output_buffer.emplace_back(std::format("Error: Failed to allocate memory for process '{}'", name));
+         shell->output_buffer.emplace_back(std::format(
+             "Error: Failed to allocate memory for process '{}'", name
+         ));
          return;
      }
 

@@ -39,7 +39,6 @@ public:
     std::atomic<uint16_t> assigned_core{9999};
     std::deque<std::string> output_buffer;
     std::atomic<uint64_t> sleep_until_tick{0};
-    size_t mem_block_start = static_cast<size_t>(-1); // Start address of allocated memory block, -1 if not allocated
 
     std::chrono::system_clock::time_point creation_time;
     std::chrono::system_clock::time_point start_time;
@@ -53,7 +52,12 @@ public:
     mutable std::mutex log_mutex;
 
     Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory);
-    ~Process();
+    ~Process()
+    {
+        if (memory) {
+            memory->destroy_process_space(id);
+        }
+    };
 
     // For running arbitrary programs
     template <typename F>
@@ -78,6 +82,14 @@ public:
     std::string get_status_string() const;
 
     std::string get_smi_string() const;
+
+    uint32_t get_var_address(const std::string& var_name);
+
+    uint8_t read_memory_byte(uint32_t virtual_address) const;
+    void write_memory_byte(uint32_t virtual_address, uint8_t value) const;
+
+    uint16_t read_memory_word(uint32_t virtual_address) const;
+    void write_memory_word(uint32_t virtual_address, uint16_t value) const;
 
 private:
     std::weak_ptr<Process> parent;

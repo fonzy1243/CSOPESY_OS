@@ -8,11 +8,10 @@
 Process::Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory) : id(id), name(name), memory(memory)
  {
     creation_time = std::chrono::system_clock::now();
-
     std::filesystem::create_directories("logs");
- }
 
- Process::~Process(){}
+    // memory->create_process_space(id, max_memory_pages);
+ }
 
 void Process::execute(uint16_t core_id, uint32_t quantum, uint32_t delay)
 {
@@ -112,6 +111,31 @@ std::string Process::get_smi_string() const
 
     return out.str();
 }
+
+uint32_t Process::get_var_address(const std::string &var_name)
+{
+    return memory->get_var_address(id, symbol_table, var_name);
+}
+
+uint8_t Process::read_memory_byte(uint32_t virtual_address) const {
+    return memory->read_byte(id, virtual_address);
+}
+
+void Process::write_memory_byte(uint32_t virtual_address, uint8_t value) const
+{
+    memory->write_byte(id, virtual_address, value);
+}
+
+uint16_t Process::read_memory_word(uint32_t virtual_address) const {
+    return memory->read_word(id, virtual_address);
+}
+
+void Process::write_memory_word(uint32_t virtual_address, uint16_t value) const
+{
+    memory->write_word(id, virtual_address, value);
+}
+
+
 
 void Process::unroll_recursive(const std::vector<std::shared_ptr<IInstruction>> &to_expand,
                                std::vector<std::shared_ptr<IInstruction>> &target_list)

@@ -22,7 +22,7 @@ class PrintInstruction : public IInstruction
     std::string variable_name;
     bool has_variable;
 public:
-    PrintInstruction(const std::string &message) : message(message) {}
+    PrintInstruction(const std::string &message) : message(message), has_variable(false) {}
     PrintInstruction(const std::string &message, const std::string &var_name) : message(message), variable_name(var_name), has_variable(true) {}
 
     void execute(Process& process) override;

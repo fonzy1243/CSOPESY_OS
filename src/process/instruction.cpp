@@ -16,7 +16,7 @@ void PrintInstruction::execute(Process &process)
         size_t var_address = process.get_var_address(variable_name);
         uint16_t var_value = process.read_memory_word(var_address);
 
-        final_message = message + variable_name + " = " + std::to_string(var_value);
+        final_message = message + " " + variable_name + " = " + std::to_string(var_value);
     }
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);

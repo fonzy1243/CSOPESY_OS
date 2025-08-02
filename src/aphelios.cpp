@@ -7,6 +7,7 @@
 #include <ftxui/dom/table.hpp>
 #include <random>
 #include <ranges>
+#include <regex>
 
 #include "cpu_tick.h"
 #include "process/instruction.h"
@@ -217,6 +218,26 @@ void ApheliOS::handle_screen_cmd(const std::string &input)
          }
          create_screen(process_name, memory_size);
 
+     } else if (args[0] == "-c" && args.size() > 3) {
+         const std::string process_name = std::string(args[1]);
+         size_t memory_size = 0;
+         try {
+             memory_size = std::stoul(std::string(args[2]));
+         } catch (...) {
+             shell->output_buffer.emplace_back("Error: invalid memory allocation");
+             return;
+         }
+
+         if (memory_size < 64 || memory_size > 65536 || (memory_size & (memory_size - 1)) != 0) {
+             shell->output_buffer.emplace_back("Error: invalid memory allocation");
+             return;
+         }
+
+         std::string raw_instr = input.substr(input.find(args[2]) + args[2].length());
+         std::string instr_str = raw_instr.substr(raw_instr.find('"') + 1);
+         instr_str = instr_str.substr(0, instr_str.rfind('"'));
+
+         create_screen_with_instructions(process_name, memory_size, instr_str);
      } else if (args[0] == "-r" && args.size() > 1) {
          switch_screen(std::string(args[1]));
      } else if (args[0] == "-ls") {
@@ -268,6 +289,138 @@ void ApheliOS::create_screen(const std::string &name, const size_t memory_size)
 
      current_session->output_buffer = shell->output_buffer;
  }
+
+void ApheliOS::create_screen_with_instructions(const std::string& name, size_t memory_size, const std::string& instr_str) {
+    if (current_session) current_session->output_buffer = shell->output_buffer;
+
+    size_t process_memory = memory_size;
+
+    if (!memory->can_allocate_process(process_memory)) {
+        shell->output_buffer.emplace_back(std::format(
+            "Error: Not enough memory to create process '{}'. Available: {} bytes, Required: {} bytes",
+            name, memory->get_available_memory(), process_memory));
+        return;
+    }
+
+    auto new_process = std::make_shared<Process>(current_pid++, name, memory);
+    if (!memory->create_process_space(new_process->id, process_memory)) {
+        shell->output_buffer.emplace_back(std::format(
+            "Error: Failed to allocate memory for process '{}'", name));
+        return;
+    }
+
+    std::vector<std::string> instr_list;
+    std::stringstream ss(instr_str);
+    std::string token;
+    while (std::getline(ss, token, ';')) {
+        std::string cleaned = std::regex_replace(token, std::regex("^ +| +$|( ) +"), "$1");
+        if (!cleaned.empty()) instr_list.push_back(cleaned);
+    }
+
+    if (instr_list.size() < 1 || instr_list.size() > 50) {
+        shell->output_buffer.emplace_back("Error: instruction count must be between 1 and 50.");
+        return;
+    }
+
+    for (const std::string& line : instr_list) {
+        std::string instr;
+        std::string args_str;
+
+        // parenthesis cause print is PRINT(
+        size_t paren_pos = line.find('(');
+        size_t space_pos = line.find(' ');
+
+        // Checking where like the main instruction word ends
+        size_t end_pos;
+        if (paren_pos != std::string::npos && (space_pos == std::string::npos || paren_pos < space_pos)) {
+            end_pos = paren_pos;
+        } else if (space_pos != std::string::npos) {
+            end_pos = space_pos;
+        } else {
+            end_pos = line.length();
+        }
+
+        instr = line.substr(0, end_pos);
+        args_str = line.substr(end_pos);
+        args_str = std::regex_replace(args_str, std::regex("^ +"), "");  // Trim leading space
+
+        if (instr == "DECLARE") {
+            std::istringstream args(args_str);
+            std::string var;
+            uint16_t val;
+            args >> var >> val;
+            new_process->add_instruction(std::make_shared<DeclareInstruction>(var, val));
+        } else if (instr == "ADD") {
+            std::istringstream args(args_str);
+            std::string dest, op1, op2;
+            args >> dest >> op1 >> op2;
+            new_process->add_instruction(std::make_shared<AddInstruction>(dest, op1, op2));
+        } else if (instr == "SUBTRACT") {
+            std::istringstream args(args_str);
+            std::string dest, op1, op2;
+            args >> dest >> op1 >> op2;
+            new_process->add_instruction(std::make_shared<SubtractInstruction>(dest, op1, op2));
+        } else if (instr == "SLEEP") {
+            int ticks = std::stoi(args_str);
+            new_process->add_instruction(std::make_shared<SleepInstruction>(ticks));
+        } else if (instr == "PRINT") {
+            std::string rest = args_str;
+
+            // Remove outer parentheses from PRINT(...)
+            rest = std::regex_replace(rest, std::regex("^\\(|\\)$"), "");
+
+            size_t plus_pos = rest.find('+');
+            if (plus_pos != std::string::npos) {
+                std::string msg = rest.substr(0, plus_pos);
+                std::string var = rest.substr(plus_pos + 1);
+
+                // Unescape quotes
+                msg = std::regex_replace(msg, std::regex(R"(\\\")"), "\"");
+
+                // Remove outer quotes and trim
+                msg = std::regex_replace(msg, std::regex(R"(^ *\"|\" *$)"), "");
+                msg = std::regex_replace(msg, std::regex("^ +| +$"), "");
+
+                var = std::regex_replace(var, std::regex("^ +| +$"), "");
+
+                new_process->add_instruction(std::make_shared<PrintInstruction>(msg, var));
+            } else {
+                rest = std::regex_replace(rest, std::regex(R"(\\\")"), "\"");
+                rest = std::regex_replace(rest, std::regex(R"(^ *\"|\" *$)"), "");
+                rest = std::regex_replace(rest, std::regex("^ +| +$"), "");
+
+                new_process->add_instruction(std::make_shared<PrintInstruction>(rest));
+            }
+        } else if (instr == "READ") {
+            std::istringstream args(args_str);
+            std::string var, address;
+            args >> var >> address;
+            // TODO: Add the read instruction here after implementation
+
+            // new_process->add_instruction();
+        } else if (instr == "WRITE") {
+            std::istringstream args(args_str);
+            std::string address, var;
+            args >> address >> var;
+            // TODO: Add the read instruction here after implementation
+
+            // new_process->add_instruction();
+        } else {
+            shell->output_buffer.push_back("Invalid instruction: " + instr);
+        }
+    }
+
+    create_session(name, false, new_process);
+    scheduler->add_process(new_process);
+
+    shell->output_buffer.clear();
+    shell->output_buffer.push_back(std::format("Process name: {}", new_process->name));
+    shell->output_buffer.push_back(std::format("Memory allocated: {} bytes ({} pages)",
+        process_memory, memory->calculate_pages_needed(process_memory)));
+    shell->output_buffer.push_back("Instructions added: " + std::to_string(instr_list.size()));
+
+    current_session->output_buffer = shell->output_buffer;
+}
 
 void ApheliOS::switch_screen(const std::string &name)
  {

@@ -14,8 +14,8 @@
 
  ApheliOS::ApheliOS()
  {
-     shell = std::make_unique<Shell>(*this);
      memory = std::make_shared<Memory>();
+     shell = std::make_unique<Shell>(*this);
      create_session("pts", true, shell->shell_process);
      ShellUtils::print_header(shell->output_buffer);
      current_session->output_buffer = shell->output_buffer;
@@ -150,6 +150,13 @@ bool ApheliOS::initialize(const std::string& config_file)
 
      config = *config_result;
 
+     memory = std::make_shared<Memory>(config->max_overall_mem, config->mem_per_frame, config->max_overall_mem / config->mem_per_frame);
+     shell->shell_process->memory = memory;
+
+     if (current_session && current_session->process) {
+         current_session->process->memory = memory;
+     }
+
      scheduler = std::make_unique<Scheduler>(config->num_cpu);
 
      running.store(true);
@@ -210,17 +217,20 @@ void ApheliOS::create_screen(const std::string &name)
          current_session->output_buffer = shell->output_buffer;
      }
 
-     auto new_process = std::make_shared<Process>(current_pid++, name, this->memory);
-     // First-fit memory allocation
-     size_t mem_size = config ? config->min_mem_per_proc : 4096;
-     auto alloc = memory->allocate_block(new_process->id, mem_size);
-     if (!alloc) {
-         shell->output_buffer.push_back("[ERROR] Not enough memory to start process. Process moved to end of ready queue.");
-         // TODO: Optionally, add to ready queue for retry later (not started)
-         scheduler->add_process(new_process); // Will be retried by scheduler
+     size_t process_memory = config ? config->min_mem_per_proc : 4096;
+
+     if (!memory->can_allocate_process(process_memory)) {
+         shell->output_buffer.emplace_back(std::format("Error: Not enough memory to create process '{}'. Available: {} bytes, Required: {} bytes", name, memory->get_available_memory(), process_memory));
          return;
      }
-     new_process->mem_block_start = *alloc;
+
+     auto new_process = std::make_shared<Process>(current_pid++, name, this->memory);
+
+     if (!memory->create_process_space(new_process->id, process_memory)) {
+         shell->output_buffer.emplace_back(std::format("Error: Failed to allocate memory for process '{}'", name));
+         return;
+     }
+
      create_session(name, false, new_process);
      scheduler->add_process(new_process);
 
@@ -228,6 +238,9 @@ void ApheliOS::create_screen(const std::string &name)
 
      shell->output_buffer.push_back(std::format("Process name: {}", current_session->process->name));
      shell->output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
+     shell->output_buffer.push_back(std::format("Memory allocated: {} bytes ({} pages)",
+       process_memory, memory->calculate_pages_needed(process_memory)));
+
 
      current_session->output_buffer = shell->output_buffer;
  }
@@ -412,34 +425,46 @@ void ApheliOS::process_generation_worker()
     const int min_instructions = config->min_ins;
     const int max_instructions = config->max_ins;
     const int delays_per_exec = config->delays_per_exec;
+    const size_t min_mem_per_proc = config->min_mem_per_proc;
+    const size_t max_mem_per_proc = config->max_mem_per_proc;
 
-    auto cpu_tick_start = std::chrono::steady_clock::now();
-    int tick_count = 0;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<size_t> memory_dis(min_mem_per_proc, max_mem_per_proc);
 
-     uint64_t last_gen_tick = 0;
+    uint64_t last_gen_tick = 0;
 
     while (scheduler_generating_processes.load()) {
         uint64_t current_tick = get_cpu_tick();
 
         if (current_tick > last_gen_tick && (current_tick % batch_frequency) == 0) {
-            // Generate a new dummy process
-            std::string process_name = std::format("p{:02d}", current_pid);  // Use current_pid instead of process_counter++
+            // Generate random memory requirement for this process
+            size_t process_memory = memory_dis(gen);
 
-            auto new_process = std::make_shared<Process>(current_pid++, process_name, memory);
-            // First-fit memory allocation
-            auto alloc = memory->allocate_block(new_process->id, config ? config->min_mem_per_proc : 4096);
-            if (!alloc) {
-                // Not enough memory, move to end of ready queue for retry
-                scheduler->add_process(new_process);
+            // Check if we have enough memory before creating the process
+            if (!memory->can_allocate_process(process_memory)) {
+                // Skip this generation cycle - not enough memory
                 last_gen_tick = current_tick;
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
             }
-            new_process->mem_block_start = *alloc;
+
+            // Generate a new dummy process
+            std::string process_name = std::format("p{:02d}", current_pid);
+
+            auto new_process = std::make_shared<Process>(current_pid++, process_name, memory);
+
+            // Create process space with the randomly allocated memory
+            if (!memory->create_process_space(new_process->id, process_memory)) {
+                // Failed to allocate memory, skip this process
+                last_gen_tick = current_tick;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
 
             // Create a session for this process (but don't make it current)
             auto new_session = std::make_shared<Session>();
-            new_session->id = new_process->id;  // Use the process ID instead of current_sid++
+            new_session->id = new_process->id;
             new_session->name = process_name;
 
             auto now = std::chrono::system_clock::now();
@@ -453,119 +478,104 @@ void ApheliOS::process_generation_worker()
             sessions.push_back(new_session);
 
             // Generate random number of instructions within min/max range
-            std::random_device rd;
-            std::mt19937 gen(rd());
             std::uniform_int_distribution<> dis(min_instructions, max_instructions);
             int target_instructions = dis(gen);
 
             // Random instruction generation setup
-            std::uniform_int_distribution<> instruction_type_dis(0, 5); // 6 instruction types
-            std::uniform_int_distribution<> value_dis(1, 100); // Random values for operations
-            std::uniform_int_distribution<> sleep_dis(1, 10); // Sleep duration in CPU ticks
-            
+            std::uniform_int_distribution<> instruction_type_dis(0, 5);
+            std::uniform_int_distribution<> value_dis(1, 100);
+            std::uniform_int_distribution<> sleep_dis(1, 10);
+
             // Keep track of declared variables for use in operations and instruction count
             std::vector<std::string> declared_vars;
             int instruction_count = 0;
-            
+
             // Add instructions to the process using random selection, respecting max instruction limit
             for (int i = 0; instruction_count < target_instructions; ++i) {
                 int instruction_type = instruction_type_dis(gen);
 
-                /* example of using new case for PRINT with variable
-                auto declared_print = std::make_shared<DeclareInstruction>("printvalue", 8);
-                new_process->add_instruction(declared_print);
-                auto print = std::make_shared<PrintInstruction>("Value from: ", "printvalue");
-                new_process->add_instruction(print);
-                */
-
                 switch (instruction_type) {
-                     case 0: { // PrintInstruction
-                         auto print_instruction = std::make_shared<PrintInstruction>(
-                             std::format("Hello world from {} instruction {}!", process_name, i)
-                         );
-                         new_process->add_instruction(print_instruction);
-                         instruction_count++; // Count this instruction
-                         break;
-                     }
-                     case 1: { // DeclareInstruction
-                         std::string var_name = std::format("var{}_{}", process_name, declared_vars.size());
-                         uint16_t value = value_dis(gen);
-                         auto declare_instruction = std::make_shared<DeclareInstruction>(var_name, value);
-                         new_process->add_instruction(declare_instruction);
-                         declared_vars.push_back(var_name);
-                         instruction_count++; // Count this instruction
-                         break;
-                     }
-                     case 2: { // AddInstruction
-                         if (declared_vars.size() >= 2) {
-                             // Use existing variables
-                             std::uniform_int_distribution<> var_dis(0, declared_vars.size() - 1);
-                             std::string result_var = std::format("result{}_{}", process_name, i);
-                             std::string var1 = declared_vars[var_dis(gen)];
-                             std::string var2 = declared_vars[var_dis(gen)];
-                             auto add_instruction = std::make_shared<AddInstruction>(result_var, var1, var2);
-                             new_process->add_instruction(add_instruction);
-                             declared_vars.push_back(result_var);
-                         } else {
-                             // Use literal values
-                             std::string result_var = std::format("result{}_{}", process_name, i);
-                             uint16_t val1 = value_dis(gen);
-                             uint16_t val2 = value_dis(gen);
-                             auto add_instruction = std::make_shared<AddInstruction>(result_var, val1, val2);
-                             new_process->add_instruction(add_instruction);
-                             declared_vars.push_back(result_var);
-                         }
-                         instruction_count++; // Count this instruction
-                         break;
-                     }
-                     case 3: { // SubtractInstruction
-                         if (declared_vars.size() >= 2) {
-                             // Use existing variables
-                             std::uniform_int_distribution<> var_dis(0, declared_vars.size() - 1);
-                             std::string result_var = std::format("diff{}_{}", process_name, i);
-                             std::string var1 = declared_vars[var_dis(gen)];
-                             std::string var2 = declared_vars[var_dis(gen)];
-                             auto subtract_instruction = std::make_shared<SubtractInstruction>(result_var, var1, var2);
-                             new_process->add_instruction(subtract_instruction);
-                             declared_vars.push_back(result_var);
-                         } else {
-                             // Use literal values
-                             std::string result_var = std::format("diff{}_{}", process_name, i);
-                             uint16_t val1 = value_dis(gen);
-                             uint16_t val2 = value_dis(gen);
-                             auto subtract_instruction = std::make_shared<SubtractInstruction>(result_var, val1, val2);
-                             new_process->add_instruction(subtract_instruction);
-                             declared_vars.push_back(result_var);
-                         }
-                         instruction_count++; // Count this instruction
-                         break;
-                     }
-                     case 4: { // SleepInstruction
-                         uint8_t sleep_time = sleep_dis(gen);
-                         auto sleep_instruction = std::make_shared<SleepInstruction>(sleep_time);
-                         new_process->add_instruction(sleep_instruction);
-                         instruction_count++; // Count this instruction
-                         break;
-                     }
-                     case 5: { // ForInstruction
-                         if (instruction_count < target_instructions) {
-                             auto for_instruction = generate_random_for_instruction(
-                                 process_name, i, declared_vars, gen, value_dis, sleep_dis, 0, instruction_count, target_instructions, 1
-                             );
-                             new_process->add_instruction(for_instruction);
-                             // Note: ForInstruction itself doesn't count, but its contents do (already counted in helper function)
-                         }
-                         break;
-                     }
-                 }
+                    case 0: { // PrintInstruction
+                        auto print_instruction = std::make_shared<PrintInstruction>(
+                            std::format("Hello world from {} instruction {} (mem: {} bytes)!", process_name, i, process_memory)
+                        );
+                        new_process->add_instruction(print_instruction);
+                        instruction_count++;
+                        break;
+                    }
+                    case 1: { // DeclareInstruction
+                        std::string var_name = std::format("var{}_{}", process_name, declared_vars.size());
+                        uint16_t value = value_dis(gen);
+                        auto declare_instruction = std::make_shared<DeclareInstruction>(var_name, value);
+                        new_process->add_instruction(declare_instruction);
+                        declared_vars.push_back(var_name);
+                        instruction_count++;
+                        break;
+                    }
+                    case 2: { // AddInstruction
+                        if (declared_vars.size() >= 2) {
+                            std::uniform_int_distribution<> var_dis(0, declared_vars.size() - 1);
+                            std::string result_var = std::format("result{}_{}", process_name, i);
+                            std::string var1 = declared_vars[var_dis(gen)];
+                            std::string var2 = declared_vars[var_dis(gen)];
+                            auto add_instruction = std::make_shared<AddInstruction>(result_var, var1, var2);
+                            new_process->add_instruction(add_instruction);
+                            declared_vars.push_back(result_var);
+                        } else {
+                            std::string result_var = std::format("result{}_{}", process_name, i);
+                            uint16_t val1 = value_dis(gen);
+                            uint16_t val2 = value_dis(gen);
+                            auto add_instruction = std::make_shared<AddInstruction>(result_var, val1, val2);
+                            new_process->add_instruction(add_instruction);
+                            declared_vars.push_back(result_var);
+                        }
+                        instruction_count++;
+                        break;
+                    }
+                    case 3: { // SubtractInstruction
+                        if (declared_vars.size() >= 2) {
+                            std::uniform_int_distribution<> var_dis(0, declared_vars.size() - 1);
+                            std::string result_var = std::format("diff{}_{}", process_name, i);
+                            std::string var1 = declared_vars[var_dis(gen)];
+                            std::string var2 = declared_vars[var_dis(gen)];
+                            auto subtract_instruction = std::make_shared<SubtractInstruction>(result_var, var1, var2);
+                            new_process->add_instruction(subtract_instruction);
+                            declared_vars.push_back(result_var);
+                        } else {
+                            std::string result_var = std::format("diff{}_{}", process_name, i);
+                            uint16_t val1 = value_dis(gen);
+                            uint16_t val2 = value_dis(gen);
+                            auto subtract_instruction = std::make_shared<SubtractInstruction>(result_var, val1, val2);
+                            new_process->add_instruction(subtract_instruction);
+                            declared_vars.push_back(result_var);
+                        }
+                        instruction_count++;
+                        break;
+                    }
+                    case 4: { // SleepInstruction
+                        uint8_t sleep_time = sleep_dis(gen);
+                        auto sleep_instruction = std::make_shared<SleepInstruction>(sleep_time);
+                        new_process->add_instruction(sleep_instruction);
+                        instruction_count++;
+                        break;
+                    }
+                    case 5: { // ForInstruction
+                        if (instruction_count < target_instructions) {
+                            auto for_instruction = generate_random_for_instruction(
+                                process_name, i, declared_vars, gen, value_dis, sleep_dis, 0, instruction_count, target_instructions, 1
+                            );
+                            new_process->add_instruction(for_instruction);
+                        }
+                        break;
+                    }
+                }
             }
 
             scheduler->add_process(new_process);
-
-            tick_count = current_tick;
+            last_gen_tick = current_tick;
         }
 
-        // Sleep for a reasonable time to avoid CRASHINGGGG
+        // Sleep for a reasonable time to avoid busy waiting
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }

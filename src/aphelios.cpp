@@ -228,13 +228,13 @@ void ApheliOS::handle_screen_cmd(const std::string &input)
  }
 
 
-void ApheliOS::create_screen(const std::string &name, int memory_size)
+void ApheliOS::create_screen(const std::string &name, const size_t memory_size)
  {
      if (current_session) {
          current_session->output_buffer = shell->output_buffer;
      }
 
-     size_t process_memory = static_cast<size_t>(memory_size);
+     size_t process_memory = memory_size;
 
      // Check if there is enough memory to allocate this process
      if (!memory->can_allocate_process(process_memory)) {

@@ -52,7 +52,7 @@ private:
     std::atomic<bool> scheduler_generating_processes{false};
     std::thread process_generation_thread;
 
-    void create_screen(const std::string& name, int memory_size);
+    void create_screen(const std::string& name, const size_t memory_size);
     void switch_screen(const std::string& name);
     void exit_screen();
     void create_session(const std::string& session_name, bool has_leader, std::shared_ptr<Process> process);

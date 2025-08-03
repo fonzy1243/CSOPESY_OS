@@ -61,6 +61,8 @@ private:
 
     void handle_screen_cmd(const std::string& input);
     void display_smi();
+    void display_process_smi();
+
     
     void start_process_generation();
     void stop_process_generation();

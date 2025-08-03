@@ -204,6 +204,17 @@ size_t Memory::calculate_pages_needed(size_t memory_bytes) const
     return (memory_bytes + page_size - 1) / page_size;
 }
 
+size_t Memory::get_process_memory_usage(uint16_t pid) const {
+    std::lock_guard lock(memory_mutex);
+
+    auto it = process_spaces.find(pid);
+    if (it == process_spaces.end()) {
+        return 0;
+    }
+
+    return it->second->allocated_pages * page_size;
+}
+
 bool Memory::create_process_space(uint32_t pid, size_t memory_bytes)
 {
     std::lock_guard lock(memory_mutex);

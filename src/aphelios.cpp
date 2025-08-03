@@ -1,6 +1,7 @@
 #include "aphelios.h"
 
 #include <cassert>
+#include <charconv>
 #include <chrono>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
@@ -125,9 +126,13 @@ void ApheliOS::process_command(const std::string &input_raw)
      } else if (command_lower == "smi") {
         display_smi();
      } else if (command_lower == "process-smi") {
-         const std::string smi_output = current_session->process->get_smi_string();
-         shell->add_multiline_output(current_session->process->get_smi_string());
-         current_session->process->save_smi_to_file();
+         if (!is_initial_shell) {
+             const std::string smi_output = current_session->process->get_smi_string();
+             shell->add_multiline_output(current_session->process->get_smi_string());
+             current_session->process->save_smi_to_file();
+             return;
+         }
+         display_process_smi();
      } else if (!command.empty()) {
          shell->output_buffer.push_back(std::format("{}: command not found", command));
      }
@@ -202,28 +207,29 @@ void ApheliOS::handle_screen_cmd(const std::string &input)
      if (args.empty()) return;
 
      if ((args[0] == "-S" || args[0] == "-s") && args.size() > 2) {
-         const std::string& process_name = std::string(args[1]);
+         const std::string process_name = std::string(args[1]);
          size_t memory_size = 0;
-         try {
-             memory_size = std::stoul(std::string(args[2]));
-         } catch (...) {
+
+         auto result = std::from_chars(args[2].data(), args[2].data() + args[2].size(), memory_size);
+         if (result.ec != std::errc()) {
              shell->output_buffer.emplace_back("Error: invalid memory allocation");
              return;
          }
 
-         // Check that memory_size is within [2^64, 2^216] and is power of 2
-        if (memory_size < 64 || memory_size > 65536 || (memory_size & (memory_size - 1)) != 0) {
+         // Check that memory_size is within [64, 65536] and is power of 2
+         if (memory_size < 64 || memory_size > 65536 || (memory_size & (memory_size - 1)) != 0) {
              shell->output_buffer.emplace_back("Error: invalid memory allocation");
              return;
          }
+
          create_screen(process_name, memory_size);
 
      } else if (args[0] == "-c" && args.size() > 3) {
          const std::string process_name = std::string(args[1]);
          size_t memory_size = 0;
-         try {
-             memory_size = std::stoul(std::string(args[2]));
-         } catch (...) {
+
+         auto result = std::from_chars(args[2].data(), args[2].data() + args[2].size(), memory_size);
+         if (result.ec != std::errc()) {
              shell->output_buffer.emplace_back("Error: invalid memory allocation");
              return;
          }
@@ -238,6 +244,7 @@ void ApheliOS::handle_screen_cmd(const std::string &input)
          instr_str = instr_str.substr(0, instr_str.rfind('"'));
 
          create_screen_with_instructions(process_name, memory_size, instr_str);
+
      } else if (args[0] == "-r" && args.size() > 1) {
          switch_screen(std::string(args[1]));
      } else if (args[0] == "-ls") {
@@ -283,8 +290,10 @@ void ApheliOS::create_screen(const std::string &name, const size_t memory_size)
 
      shell->output_buffer.push_back(std::format("Process name: {}", current_session->process->name));
      shell->output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
+     shell->output_buffer.push_back(std::format("Maximum Memory: {} bytes ({} pages)",
+         process_memory, memory->calculate_pages_needed(process_memory)));
      shell->output_buffer.push_back(std::format("Memory allocated: {} bytes ({} pages)",
-       process_memory, memory->calculate_pages_needed(process_memory)));
+         memory->get_process_memory_usage(new_process->id), memory->calculate_pages_needed(memory->get_process_memory_usage(new_process->id))));
 
 
      current_session->output_buffer = shell->output_buffer;
@@ -427,8 +436,11 @@ void ApheliOS::create_screen_with_instructions(const std::string& name, size_t m
 
     shell->output_buffer.clear();
     shell->output_buffer.push_back(std::format("Process name: {}", new_process->name));
-    shell->output_buffer.push_back(std::format("Memory allocated: {} bytes ({} pages)",
+    shell->output_buffer.push_back(std::format("Maximum Memory: {} bytes ({} pages)",
         process_memory, memory->calculate_pages_needed(process_memory)));
+    shell->output_buffer.push_back(std::format("Memory allocated: {} bytes ({} pages)",
+        memory->get_process_memory_usage(new_process->id), memory->calculate_pages_needed(memory->get_process_memory_usage(new_process->id))));
+
     shell->output_buffer.push_back("Instructions added: " + std::to_string(instr_list.size()));
 
     current_session->output_buffer = shell->output_buffer;
@@ -491,6 +503,61 @@ void ApheliOS::display_smi()
  {
      ShellUtils::display_smi(*shell);
  }
+
+void ApheliOS::display_process_smi() {
+    if (!is_initialized()) {
+        shell->output_buffer.emplace_back("Error: ApheliOS is not initialized.");
+        return;
+    }
+
+    auto running_processes = scheduler->get_running();
+    auto finished_processes = scheduler->get_finished();
+
+    // Calculate CPU utilization
+    int cores_used = 0;
+    for (const auto& process : running_processes) {
+        if (process->get_state() == ProcessState::eRunning && process->get_assigned_core() != 9999) {
+            cores_used++;
+        }
+    }
+
+    float cpu_util = (config->num_cpu > 0) ? (static_cast<float>(cores_used) / config->num_cpu) * 100.0f : 0.0f;
+
+    // Get memory information
+    size_t total_memory = memory->size();
+    size_t allocated_memory = memory->get_total_allocated_memory();
+    size_t available_memory = memory->get_available_memory();
+    float memory_util = (total_memory > 0) ? (static_cast<float>(allocated_memory) / total_memory) * 100.0f : 0.0f;
+
+    shell->output_buffer.emplace_back("=================================================");
+    shell->output_buffer.emplace_back("| PROCESS-SMI V01.00 DRIVER-VERSION 1.0         |");
+    shell->output_buffer.emplace_back("=================================================\n");
+
+    // Display CPU and Memory utilization
+    shell->output_buffer.emplace_back(std::format("CPU-Util: {:.2f}%", cpu_util));
+    shell->output_buffer.emplace_back(std::format("Memory Usage: {}B / {}B", allocated_memory, total_memory));
+    shell->output_buffer.emplace_back(std::format("Memory Util: {:.2f}%", memory_util));
+    shell->output_buffer.emplace_back("\n");
+
+    // Display running processes and their memory usage
+     shell->output_buffer.emplace_back("-------------------------------------------------");
+    shell->output_buffer.emplace_back("Running processes and memory usage:");
+    shell->output_buffer.emplace_back("-------------------------------------------------");
+
+    if (running_processes.empty()) {
+        shell->output_buffer.emplace_back("No running processes");
+    } else {
+        for (const auto& process : running_processes) {
+            if (process->get_state() == ProcessState::eRunning) {
+                size_t process_memory = memory->get_process_memory_usage(process->id);
+                shell->output_buffer.emplace_back(std::format("{:<20} {:<10} (pages: {})",
+                    process->name, process_memory, memory->calculate_pages_needed(process_memory)));
+            }
+        }
+    }
+
+    shell->output_buffer.emplace_back("=================================================");
+}
 
 void ApheliOS::start_process_generation()
 {

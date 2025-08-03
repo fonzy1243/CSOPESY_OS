@@ -100,4 +100,14 @@ public:
     std::string get_type_name() const override;
 };
 
+class ReadInstruction : public IInstruction
+{
+    std::string var;
+    uint32_t address;
+public:
+    ReadInstruction(const std::string& var, uint32_t address) : var(var), address(address) {}
+    void execute(Process &process) override;
+    std::string get_type_name() const override;
+};
+
 #endif //INSTRUCTION_H

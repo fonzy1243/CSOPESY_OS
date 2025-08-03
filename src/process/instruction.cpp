@@ -218,3 +218,32 @@ std::string ForInstruction::get_type_name() const
 {
     return "FOR";
 }
+
+void ReadInstruction::execute(Process &process)
+{
+    uint16_t core_id = process.assigned_core.load();
+    uint16_t val = process.read_memory_word(address);
+    uint32_t var_address = process.get_var_address(var);
+    process.write_memory_word(var_address, val);
+
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+
+    localtime_s(&tm, &time_t);
+
+    std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"READ {} @ 0x{:04X} -> {}\"",
+    tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+    core_id, var, address, val);
+
+    std::lock_guard lock(process.log_mutex);
+
+    // Add to print_logs for viewing
+    process.print_logs.push_back(log_entry);
+    process.output_buffer.push_back(log_entry);
+}
+
+std::string ReadInstruction::get_type_name() const
+{
+    return "READ";
+}

@@ -124,7 +124,10 @@ void ApheliOS::process_command(const std::string &input_raw)
          scheduler->write_utilization_report();
          shell->output_buffer.emplace_back("Utilization report saved to logs/csopesy-log.txt");
      } else if (command_lower == "smi") {
-        display_smi();
+         display_smi();
+     } else if (command_lower == "vmstat") {
+         if (!in_main("vmstat")) return;
+         display_vmstat();
      } else if (command_lower == "process-smi") {
          if (!is_initial_shell) {
              const std::string smi_output = current_session->process->get_smi_string();
@@ -504,6 +507,39 @@ void ApheliOS::display_smi()
      ShellUtils::display_smi(*shell);
  }
 
+void ApheliOS::display_vmstat() {
+     if (!is_initialized()) {
+         shell->output_buffer.emplace_back("Error: ApheliOS is not initialized.");
+         return;
+     }
+
+     size_t total_memory = memory->size();
+     size_t used_memory = memory->get_total_allocated_memory();
+     size_t free_memory = memory->get_available_memory();
+
+     uint64_t idle_ticks = get_idle_ticks();
+     uint64_t active_ticks = get_active_ticks();
+     uint64_t total_ticks = get_cpu_tick();
+
+     uint64_t pages_in = memory->get_pages_paged_in();
+     uint64_t pages_out = memory->get_pages_paged_out();
+
+     shell->output_buffer.emplace_back(" ");
+     shell->output_buffer.emplace_back("===================================");
+     shell->output_buffer.emplace_back("|              VMSTAT             |");
+     shell->output_buffer.emplace_back("===================================");
+     shell->output_buffer.emplace_back(std::format("{:>12} B total memory", total_memory));
+     shell->output_buffer.emplace_back(std::format("{:>12} B used memory", used_memory));
+     shell->output_buffer.emplace_back(std::format("{:>12} B free memory", free_memory));
+     shell->output_buffer.emplace_back(std::format("{:>12} idle cpu ticks", idle_ticks));
+     shell->output_buffer.emplace_back(std::format("{:>12} active cpu ticks", active_ticks));
+     shell->output_buffer.emplace_back(std::format("{:>12} total cpu ticks", total_ticks));
+     shell->output_buffer.emplace_back(std::format("{:>12} pages paged in", pages_in));
+     shell->output_buffer.emplace_back(std::format("{:>12} pages paged out", pages_out));
+     shell->output_buffer.emplace_back("===================================");
+
+ }
+
 void ApheliOS::display_process_smi() {
     if (!is_initialized()) {
         shell->output_buffer.emplace_back("Error: ApheliOS is not initialized.");
@@ -529,18 +565,17 @@ void ApheliOS::display_process_smi() {
     size_t available_memory = memory->get_available_memory();
     float memory_util = (total_memory > 0) ? (static_cast<float>(allocated_memory) / total_memory) * 100.0f : 0.0f;
 
+     shell->output_buffer.emplace_back(" ");
     shell->output_buffer.emplace_back("=================================================");
     shell->output_buffer.emplace_back("| PROCESS-SMI V01.00 DRIVER-VERSION 1.0         |");
     shell->output_buffer.emplace_back("=================================================\n");
 
-    // Display CPU and Memory utilization
     shell->output_buffer.emplace_back(std::format("CPU-Util: {:.2f}%", cpu_util));
     shell->output_buffer.emplace_back(std::format("Memory Usage: {}B / {}B", allocated_memory, total_memory));
     shell->output_buffer.emplace_back(std::format("Memory Util: {:.2f}%", memory_util));
-    shell->output_buffer.emplace_back("\n");
 
-    // Display running processes and their memory usage
-     shell->output_buffer.emplace_back("-------------------------------------------------");
+    shell->output_buffer.emplace_back(" ");
+    shell->output_buffer.emplace_back("=================================================");
     shell->output_buffer.emplace_back("Running processes and memory usage:");
     shell->output_buffer.emplace_back("-------------------------------------------------");
 

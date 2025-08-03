@@ -110,4 +110,22 @@ public:
     std::string get_type_name() const override;
 };
 
+class WriteInstruction : public IInstruction
+{
+    uint32_t address;
+    bool useVar;
+    std::string varName;
+    uint16_t literal;
+
+public:
+    // literal constructor
+    WriteInstruction(uint32_t addr, uint16_t lit) : address(addr), useVar(false), literal(lit) {}
+
+    // variable constructor
+    WriteInstruction(uint32_t addr, const std::string &var) : address(addr), useVar(true), varName(var) {}
+
+    void execute(Process &process) override;
+    std::string get_type_name() const override;
+};
+
 #endif //INSTRUCTION_H

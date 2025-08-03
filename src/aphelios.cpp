@@ -401,11 +401,22 @@ void ApheliOS::create_screen_with_instructions(const std::string& name, size_t m
             );
         } else if (instr == "WRITE") {
             std::istringstream args(args_str);
-            std::string address, var;
-            args >> address >> var;
-            // TODO: Add the read instruction here after implementation
+            std::string address, var_val;
+            uint16_t value;
 
-            // new_process->add_instruction();
+            args >> address >> var_val;
+
+            uint32_t addr = std::stoul(address, nullptr, 0);
+
+            // Decide if var_val is a number or a variable name
+            if (!var_val.empty() && (std::isdigit(var_val[0]) || (var_val.size() > 1 && var_val[0] == '0' && (var_val[1] == 'x' || var_val[1] == 'X'))))
+            {
+                uint16_t lit = static_cast<uint16_t>(std::stoul(var_val, nullptr, 0));
+                new_process->add_instruction(std::make_shared<WriteInstruction>(addr, lit));
+            } else {
+                // Variable name, read value
+                new_process->add_instruction(std::make_shared<WriteInstruction>(addr, var_val));
+            }           
         } else {
             shell->output_buffer.push_back("Invalid instruction: " + instr);
         }

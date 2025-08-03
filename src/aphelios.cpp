@@ -395,9 +395,10 @@ void ApheliOS::create_screen_with_instructions(const std::string& name, size_t m
             std::istringstream args(args_str);
             std::string var, address;
             args >> var >> address;
-            // TODO: Add the read instruction here after implementation
-
-            // new_process->add_instruction();
+            uint32_t var_address = std::stoul(address, nullptr, 0);
+            new_process->add_instruction(
+                std::make_shared<ReadInstruction>(var, var_address)
+            );
         } else if (instr == "WRITE") {
             std::istringstream args(args_str);
             std::string address, var;

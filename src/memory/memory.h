@@ -184,6 +184,9 @@ public:
     size_t get_total_allocated_memory() const;
     size_t calculate_pages_needed(size_t memory_bytes) const;
 
+    size_t get_process_memory_usage(uint16_t pid) const;
+    uint32_t get_page_size() const { return page_size; }
+
     [[nodiscard]] uint8_t read_byte(uint16_t address) const;
     [[nodiscard]] uint8_t read_byte(uint32_t pid, uint32_t virtual_address);
 

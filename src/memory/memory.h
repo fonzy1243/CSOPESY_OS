@@ -144,6 +144,8 @@ class Memory {
     // Stats
     std::atomic<uint64_t> page_faults{0};
     std::atomic<uint64_t> page_swaps{0};
+    std::atomic<uint64_t> pages_paged_in{0};
+    std::atomic<uint64_t> pages_paged_out{0};
 
     uint32_t get_page_number(uint32_t virtual_address) const
     {
@@ -186,6 +188,9 @@ public:
 
     size_t get_process_memory_usage(uint16_t pid) const;
     uint32_t get_page_size() const { return page_size; }
+
+    uint64_t get_pages_paged_in() const { return pages_paged_in.load(); }
+    uint64_t get_pages_paged_out() const { return pages_paged_out.load(); }
 
     [[nodiscard]] uint8_t read_byte(uint16_t address) const;
     [[nodiscard]] uint8_t read_byte(uint32_t pid, uint32_t virtual_address);

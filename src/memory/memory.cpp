@@ -96,6 +96,10 @@ std::optional<uint32_t> Memory::evict_and_allocate()
             &memory[physical_addr]
             );
         ++page_swaps;
+
+        // increment page-out counter
+        pages_paged_out.fetch_add(1);
+
     }
 
     page_entry.set_present(false);
@@ -142,6 +146,9 @@ bool Memory::handle_page_fault(uint32_t pid, uint32_t page_number)
 
     if (process_space->page_to_backing_slot.find(page_number) != process_space->page_to_backing_slot.end()) {
         backing_store->read_page(process_space->page_to_backing_slot[page_number], &memory[physical_addr]);
+
+        // increment page-in counter
+        pages_paged_in.fetch_add(1);
     } else {
         std::fill_n(&memory[physical_addr], page_size, 0);
     }

@@ -110,17 +110,32 @@ std::optional<uint32_t> Memory::evict_and_allocate()
     return victim_frame;
 }
 
-bool Memory::handle_page_fault(uint32_t process_id, uint32_t page_number)
+bool Memory::handle_page_fault(uint32_t pid, uint32_t page_number)
 {
-    auto& process_space = process_spaces[process_id];
-    auto& page_entry = process_space->page_table[page_number]; // FIXED: was process_id, now page_number
+    auto it = process_spaces.find(pid);
+    if (it == process_spaces.end()) {
+        return false;
+    }
+
+    auto& process_space = it->second;
+
+    // Segmentation fault
+    if (page_number >= process_space->max_pages) {
+        return false;
+    }
+
+    auto& page_entry = process_space->page_table[page_number];
+
+    if (page_entry.is_present()) {
+        return true;
+    }
 
     ++page_faults;
 
     auto frame = allocate_frame();
     if (!frame) return false;
 
-    frames[*frame].pid = process_id;
+    frames[*frame].pid = pid;
     frames[*frame].page_number = page_number;
 
     uint32_t physical_addr = get_physical_address(*frame, 0);
@@ -143,9 +158,34 @@ bool Memory::handle_page_fault(uint32_t process_id, uint32_t page_number)
 
 bool Memory::can_allocate_process(size_t required_memory_bytes) const
 {
-    // std::lock_guard lock(memory_mutex);
-    // return (total_allocated_memory.load() + required_memory_bytes) <= max_overall_memory;
-    return process_spaces.size() < 1000;
+    std::lock_guard lock(memory_mutex);
+
+    size_t pages_needed = calculate_pages_needed(required_memory_bytes);
+
+    // Sanity check
+    if (pages_needed > frames.size()) return false;
+
+    // Calculate memory usage
+    size_t currently_allocated_pages = frames.size() - free_frames.size();
+    size_t total_committed_pages = 0;
+
+    for (const auto& [pid, process_space] : process_spaces) {
+        total_committed_pages += process_space->max_pages;
+    }
+
+    size_t worst_case_pages = total_committed_pages + pages_needed;
+
+    size_t reserved_frames = std::max(static_cast<size_t>(1), frames.size() / 20);
+    size_t usable_frames = frames.size() - reserved_frames;
+
+    if (backing_store) {
+        size_t available_frames = free_frames.size();
+        size_t min_free_threshold = frames.size() / 4;
+
+        if (available_frames >= min_free_threshold && pages_needed <= available_frames / 2) return true;
+    } else if (worst_case_pages <= usable_frames) return true;
+
+    return false;
 }
 
 size_t Memory::get_available_memory() const

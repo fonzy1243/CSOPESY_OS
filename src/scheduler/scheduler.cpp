@@ -116,6 +116,8 @@ void Scheduler::scheduler_loop()
 void Scheduler::add_process(std::shared_ptr<Process> process)
  {
      process->unroll_instructions();
+     process->load_instructions_to_memory();
+
      process->set_state(ProcessState::eReady);
 
      // Find the core with the least work for load balancing
@@ -179,7 +181,7 @@ void Scheduler::cpu_worker(uint16_t core_id)
 
              uint32_t ticks_to_run = (scheduler_type == SchedulerType::FCFS) ? 0 : quantum_cycles;
 
-             process_to_run->execute(core_id, ticks_to_run, delay);
+             process_to_run->execute_from_memory(core_id, ticks_to_run, delay);
 
              // Remove from running processes
              {
@@ -187,9 +189,9 @@ void Scheduler::cpu_worker(uint16_t core_id)
                  std::erase(running_processes, process_to_run);
              }
 
-             const bool finished = (process_to_run->current_instruction.load() >= (int)process_to_run->instructions.size());
+             const uint32_t max_addr = process_to_run->get_code_segment_base() + (process_to_run->instructions.size() * sizeof(EncodedInstruction));
 
-             if (finished) {
+             if (const bool finished = (process_to_run->get_program_counter() >= max_addr)) {
                  process_to_run->set_state(ProcessState::eFinished);
                  std::lock_guard finished_lock(finished_mutex);
                  process_to_run->set_assigned_core(9999);

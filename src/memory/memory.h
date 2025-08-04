@@ -168,7 +168,7 @@ class Memory {
 
 
 public:
-    explicit Memory(const size_t total_memory = 65536, const size_t frame_size = 4096, const size_t = 256) : memory(total_memory, 0), frames(total_memory / frame_size), page_size(frame_size), max_overall_memory(total_memory), backing_store(std::make_unique<BackingStore>("test_store.txt", 4294967296, frame_size))
+    explicit Memory(const size_t total_memory = 65536, const size_t frame_size = 4096, const size_t = 256) : memory(total_memory, 0), frames(total_memory / frame_size), page_size(frame_size), max_overall_memory(total_memory), backing_store(std::make_unique<BackingStore>("test_store.txt", 1024, frame_size))
     {
         for (size_t i = 0; i < frames.size(); i++) {
             free_frames.push(i);

@@ -16,11 +16,15 @@ Process::Process(const uint16_t id, const std::string &name, const std::shared_p
 
  Process::~Process()
 {
+    this->free_process_memory();
+}
+
+void Process::free_process_memory()
+{
     if (memory) {
         memory->destroy_process_space(id);
     }
 }
-
 
 void Process::execute(uint16_t core_id, uint32_t quantum, uint32_t delay)
 {

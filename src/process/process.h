@@ -100,6 +100,8 @@ public:
     void set_program_counter(uint32_t pc) { program_counter.store(pc); }
     void increment_program_counter();
 
+    void free_process_memory();
+
 private:
     std::weak_ptr<Process> parent;
     std::vector<std::shared_ptr<Process>> children;

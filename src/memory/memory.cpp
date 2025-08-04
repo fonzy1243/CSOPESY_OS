@@ -177,30 +177,12 @@ bool Memory::can_allocate_process(size_t required_memory_bytes) const
 
     size_t pages_needed = calculate_pages_needed(required_memory_bytes);
 
-    // Sanity check
-    if (pages_needed > frames.size()) return false;
-
-    // Calculate memory usage
-    size_t currently_allocated_pages = frames.size() - free_frames.size();
-    size_t total_committed_pages = 0;
-
-    for (const auto& [pid, process_space] : process_spaces) {
-        total_committed_pages += process_space->max_pages;
+    if (backing_store) {
+        const size_t MAX_VIRTUAL_PAGES = (1024 * 1024 * 1024) / page_size;
+        return pages_needed <= MAX_VIRTUAL_PAGES;
     }
 
-    size_t worst_case_pages = total_committed_pages + pages_needed;
-
-    size_t reserved_frames = std::max(static_cast<size_t>(1), frames.size() / 20);
-    size_t usable_frames = frames.size() - reserved_frames;
-
-    if (backing_store) {
-        size_t available_frames = free_frames.size();
-        size_t min_free_threshold = frames.size() / 4;
-
-        if (available_frames >= min_free_threshold && pages_needed <= available_frames / 2) return true;
-    } else if (worst_case_pages <= usable_frames) return true;
-
-    return false;
+    return pages_needed <= frames.size();
 }
 
 size_t Memory::get_available_memory() const

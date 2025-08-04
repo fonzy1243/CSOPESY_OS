@@ -199,6 +199,7 @@ void Scheduler::cpu_worker(uint16_t core_id)
                  process_to_run->set_state(ProcessState::eFinished);
                  std::lock_guard finished_lock(finished_mutex);
                  process_to_run->set_assigned_core(9999);
+                 process_to_run->free_process_memory();
                  finished_processes.push_back(process_to_run);
              } else if (process_to_run->get_state() == ProcessState::eWaiting) {
                  // Still waiting (e.g., sleeping)

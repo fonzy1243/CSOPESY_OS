@@ -695,30 +695,13 @@ void ApheliOS::process_generation_worker()
 
         if (current_tick > last_gen_tick && (current_tick % batch_frequency) == 0) {
             // Generate random memory requirement for this process
-            size_t process_memory = memory_dis(gen);
-
-            // Check if we have enough memory before creating the process
-            if (!memory->can_allocate_process(process_memory)) {
-                // Skip this generation cycle - not enough memory
-                last_gen_tick = current_tick;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                continue;
-            }
+            size_t base_process_memory = memory_dis(gen);
 
             // Generate a new dummy process
             std::string process_name = std::format("p{:02d}", current_pid);
-
             auto new_process = std::make_shared<Process>(current_pid++, process_name, memory);
 
-            // Create process space with the randomly allocated memory
-            if (!memory->create_process_space(new_process->id, process_memory)) {
-                // Failed to allocate memory, skip this process
-                last_gen_tick = current_tick;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                continue;
-            }
-
-            // Create a session for this process (but don't make it current)
+            // Create session (but don't make it current)
             auto new_session = std::make_shared<Session>();
             new_session->id = new_process->id;
             new_session->name = process_name;
@@ -729,8 +712,6 @@ void ApheliOS::process_generation_worker()
 
             new_session->process = new_process;
             new_process->session = new_session;
-
-            // Add session to sessions list (but don't change current_session)
             sessions.push_back(new_session);
 
             // Generate random number of instructions within min/max range
@@ -742,18 +723,19 @@ void ApheliOS::process_generation_worker()
             std::uniform_int_distribution<> value_dis(1, 100);
             std::uniform_int_distribution<> sleep_dis(1, 10);
 
-            // Keep track of declared variables for use in operations and instruction count
+            // Keep track of declared variables and instruction count
             std::vector<std::string> declared_vars;
             int instruction_count = 0;
 
-            // Add instructions to the process using random selection, respecting max instruction limit
+            // Add instructions to the process using random selection
             for (int i = 0; instruction_count < target_instructions; ++i) {
                 int instruction_type = instruction_type_dis(gen);
 
                 switch (instruction_type) {
                     case 0: { // PrintInstruction
                         auto print_instruction = std::make_shared<PrintInstruction>(
-                            std::format("Hello world from {} instruction {} (mem: {} bytes)!", process_name, i, process_memory)
+                            std::format("Hello world from {} instruction {} (mem: {} bytes)!",
+                                      process_name, i, base_process_memory)
                         );
                         new_process->add_instruction(print_instruction);
                         instruction_count++;
@@ -818,13 +800,55 @@ void ApheliOS::process_generation_worker()
                     case 5: { // ForInstruction
                         if (instruction_count < target_instructions) {
                             auto for_instruction = generate_random_for_instruction(
-                                process_name, i, declared_vars, gen, value_dis, sleep_dis, 0, instruction_count, target_instructions, 1
+                                process_name, i, declared_vars, gen, value_dis, sleep_dis,
+                                0, instruction_count, target_instructions, 1
                             );
                             new_process->add_instruction(for_instruction);
                         }
                         break;
                     }
                 }
+            }
+
+            // FIXED: Calculate total memory requirements properly
+            size_t code_segment_size = instruction_count * sizeof(EncodedInstruction);
+
+            // Estimate string table size based on instructions and variable names
+            size_t estimated_string_table_size = 0;
+            estimated_string_table_size += instruction_count * 30; // Average string length per instruction
+            estimated_string_table_size += declared_vars.size() * 15; // Average variable name length
+            estimated_string_table_size = std::max(estimated_string_table_size, size_t(1024)); // Minimum 1KB
+
+            // Variable storage space (2 bytes per variable)
+            size_t variable_space = declared_vars.size() * 2 + 512; // Extra space for future variables
+
+            // Add padding between segments for safety
+            size_t padding = 1024;
+
+            // Calculate total required memory
+            size_t total_required_memory = base_process_memory +
+                                          code_segment_size +
+                                          estimated_string_table_size +
+                                          variable_space +
+                                          padding;
+
+            // Ensure minimum memory allocation
+            total_required_memory = std::max(total_required_memory, size_t(8192)); // 8KB minimum
+
+            // Check if we have enough memory before creating the process
+            // if (!memory->can_allocate_process(total_required_memory)) {
+            //     // Skip this generation cycle - not enough memory
+            //     last_gen_tick = current_tick;
+            //     std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            //     continue;
+            // }
+
+            // Create process space with the properly calculated memory
+            if (!memory->create_process_space(new_process->id, total_required_memory)) {
+                // Failed to allocate memory, skip this process
+                last_gen_tick = current_tick;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
             }
 
             scheduler->add_process(new_process);

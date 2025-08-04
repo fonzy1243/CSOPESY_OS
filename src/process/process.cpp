@@ -1,17 +1,26 @@
 #include "process.h"
+#include "instruction.h"
 
 #include <filesystem>
 #include <ranges>
 
 #include "../cpu_tick.h"
 
-Process::Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory) : id(id), name(name), memory(memory)
+Process::Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory) : id(id), name(name), memory(memory), encoder(std::make_unique<InstructionEncoder>())
  {
     creation_time = std::chrono::system_clock::now();
     std::filesystem::create_directories("logs");
 
     // memory->create_process_space(id, max_memory_pages);
  }
+
+ Process::~Process()
+{
+    if (memory) {
+        memory->destroy_process_space(id);
+    }
+}
+
 
 void Process::execute(uint16_t core_id, uint32_t quantum, uint32_t delay)
 {
@@ -46,6 +55,7 @@ void Process::execute(uint16_t core_id, uint32_t quantum, uint32_t delay)
 void Process::add_instruction(std::shared_ptr<IInstruction> instruction)
 {
     instructions.push_back(instruction);
+    str_table_base = (instructions.size() * sizeof(EncodedInstruction)) + 0x100;
 }
 
 void Process::generate_print_instructions()
@@ -77,16 +87,18 @@ std::string Process::get_status_string() const
     ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
     std::string formatted_time = ss.str();
 
+    uint32_t current_inst = (program_counter.load() - code_segment_base) / sizeof(EncodedInstruction);
+
     if (state_str == "Finished") {
         return std::format("{:<12} ({})  {:<10} {:>3}/{:<3}",
                         name, formatted_time, "Finished",
-                        current_instruction.load(), instructions.size());
+                        current_inst, instructions.size());
     }
     if (state_str == "Running") {
         std::string core_info = std::format("Core: {}", assigned_core.load());
             return std::format("{:<12} ({})  {:<10} {:>3}/{:<3}",
                         name, formatted_time, core_info,
-                        current_instruction.load(), instructions.size());
+                        current_inst, instructions.size());
     }
 
     return "debug";
@@ -106,7 +118,9 @@ std::string Process::get_smi_string() const
     for (const auto &log: print_logs)
         out << "  " << log << "\n";
 
-    out << std::format("Current instruction line: {}\n", current_instruction.load());
+    uint32_t current_inst = (program_counter.load() - code_segment_base) / sizeof(EncodedInstruction);
+
+    out << std::format("Current instruction line: {}\n", current_inst);
     out << std::format("Lines of code: {}\n", instructions.size());
 
     return out.str();
@@ -174,5 +188,86 @@ void Process::save_smi_to_file()
     if (out.is_open()) {
         out << get_smi_string();
         out.close();
+    }
+}
+
+void Process::load_instructions_to_memory()
+{
+    encoder->store_str_table(*this, str_table_base);
+
+    uint32_t current_addr = code_segment_base;
+
+    for (const auto& inst : instructions) {
+        EncodedInstruction encoded = encoder->encode_instruction(inst);
+
+        write_memory_byte(current_addr + 0, encoded.opcode);
+        write_memory_byte(current_addr + 1, encoded.flags);
+        write_memory_word(current_addr + 2, encoded.operand1);
+        write_memory_word(current_addr + 4, encoded.operand2);
+        write_memory_word(current_addr + 6, encoded.operand3);
+
+        current_addr += sizeof(EncodedInstruction);
+    }
+
+
+    program_counter.store(code_segment_base);
+}
+
+// This function may return null. Check for this in your code if you use it
+std::shared_ptr<IInstruction> Process::fetch_instruction()
+{
+    uint32_t pc = program_counter.load();
+
+    uint32_t max_addr = code_segment_base + (instructions.size() * sizeof(EncodedInstruction));
+    if (pc >= max_addr) {
+        return nullptr;
+    }
+
+    encoder->load_str_table(*this, str_table_base);
+
+    EncodedInstruction encoded;
+    encoded.opcode = read_memory_byte(pc);
+    encoded.flags = read_memory_byte(pc + 1);
+    encoded.operand1 = read_memory_word(pc + 2);
+    encoded.operand2 = read_memory_word(pc + 4);
+    encoded.operand3 = read_memory_word(pc + 6);
+
+    return encoder->decode_instruction(encoded);
+}
+
+void Process::increment_program_counter() { program_counter.fetch_add(sizeof(EncodedInstruction)); }
+
+
+void Process::execute_from_memory(uint16_t core_id, uint32_t quantum, uint32_t delay)
+{
+    start_time = std::chrono::system_clock::now();
+    uint32_t ticks_executed = 0;
+
+    const bool run_indefinitely = quantum == 0;
+
+    while (ticks_executed < quantum || run_indefinitely) {
+        if (get_state() == ProcessState::eWaiting) break;
+
+        uint64_t last_tick = get_cpu_tick();
+        uint64_t current_tick;
+        while ((current_tick = get_cpu_tick()) == last_tick) {
+            std::this_thread::yield();
+        }
+
+        ticks_executed++;
+
+        if (ticks_executed % (delay + 1) == 0) {
+            auto instruction = fetch_instruction();
+            if (!instruction) break;
+            instruction->execute(*this);
+            increment_program_counter();
+        }
+
+        if (get_state() == ProcessState::eWaiting) break;
+    }
+
+    uint32_t max_addr = code_segment_base + (instructions.size() * sizeof(EncodedInstruction));
+    if (program_counter.load() >= max_addr) {
+        end_time = std::chrono::system_clock::now();
     }
 }

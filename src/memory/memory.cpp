@@ -231,8 +231,8 @@ bool Memory::create_process_space(uint32_t pid, size_t memory_bytes)
         return false;
     }
 
-    size_t pages_needed = calculate_pages_needed(memory_bytes);
-    process_spaces[pid] = std::make_unique<ProcessMemorySpace>(pid, pages_needed);
+    size_t initial_pages = std::max(calculate_pages_needed(memory_bytes), static_cast<size_t>(1));
+    process_spaces[pid] = std::make_unique<ProcessMemorySpace>(pid, initial_pages);
 
     return true;
 }

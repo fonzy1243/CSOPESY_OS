@@ -320,12 +320,9 @@ void Memory::write_byte(uint32_t pid, uint32_t virtual_address, uint8_t value)
     uint32_t page_num = get_page_number(virtual_address);
     uint32_t offset = get_page_offset(virtual_address);
 
+    if (!handle_page_fault(pid, page_num)) return;
+
     auto& page_entry = it->second->page_table[page_num];
-
-    if (!page_entry.is_present()) {
-        if (!handle_page_fault(pid, page_num)) return;
-    }
-
     page_entry.set_referenced(true);
     page_entry.set_dirty(true);
 

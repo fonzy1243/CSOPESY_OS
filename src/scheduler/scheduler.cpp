@@ -145,6 +145,8 @@ void Scheduler::cpu_worker(uint16_t core_id)
      static std::atomic<uint64_t> global_quantum_counter{0};
      while (running.load()) {
          std::shared_ptr<Process> process_to_run = nullptr;
+         bool cpu_was_active = false;
+
 
          // First, check this core's dedicated queue
          {
@@ -173,6 +175,8 @@ void Scheduler::cpu_worker(uint16_t core_id)
          }
 
          if (process_to_run) {
+             cpu_was_active = true;
+
              // Add to running processes for monitoring
              {
                  std::lock_guard running_lock(running_mutex);
@@ -215,10 +219,15 @@ void Scheduler::cpu_worker(uint16_t core_id)
              if (scheduler_type == SchedulerType::RR) {
                  uint64_t prev = global_quantum_counter.fetch_add(1) + 1;
              }
+         }
+
+         if (cpu_was_active) {
+             increment_active_ticks();
          } else {
              // No process to run, but don't sleep - just yield CPU briefly
              std::this_thread::yield();
          }
+
      }
  }
 

@@ -119,9 +119,17 @@ bool Memory::handle_page_fault(uint32_t pid, uint32_t page_number)
 
     auto& process_space = it->second;
 
-    // Segmentation fault
-    if (page_number >= process_space->max_pages) {
-        return false;
+    // Instead of hard limit, use a reasonable maximum (e.g., 1GB worth of pages)
+    const size_t MAX_VIRTUAL_PAGES = (1024 * 1024 * 1024) / page_size; // 1GB
+
+    if (page_number >= MAX_VIRTUAL_PAGES) {
+        return false; // True segmentation fault - way too high
+    }
+
+    // Expand page table if needed
+    if (page_number >= process_space->page_table.entries.size()) {
+        process_space->page_table.entries.resize(page_number + 1);
+        process_space->max_pages = page_number + 1;
     }
 
     auto& page_entry = process_space->page_table[page_number];
@@ -286,12 +294,9 @@ uint8_t Memory::read_byte(uint32_t pid, uint32_t virtual_address)
     uint32_t page_num = get_page_number(virtual_address);
     uint32_t offset = get_page_offset(virtual_address);
 
+    if (!handle_page_fault(pid, page_num)) return 0; // FIXED: was virtual_address, should be page_num
+
     auto& page_entry = it->second->page_table[page_num];
-
-    if (!page_entry.is_present()) {
-        if (!handle_page_fault(pid, page_num)) return 0; // FIXED: was virtual_address, should be page_num
-    }
-
     page_entry.set_referenced(true);
 
     uint32_t physical_addr = get_physical_address(page_entry.frame_num, offset);

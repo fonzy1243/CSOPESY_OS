@@ -222,7 +222,7 @@ void Scheduler::cpu_worker(uint16_t core_id)
          }
 
          if (cpu_was_active) {
-             increment_active_ticks();
+            mark_core_active();
          } else {
              // No process to run, but don't sleep - just yield CPU briefly
              std::this_thread::yield();

@@ -39,6 +39,13 @@ void ApheliOS::run_system_clock()
  {
      while (running.load()) {
          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+         if (any_core_active_this_tick.load()) {
+             increment_active_ticks();
+         }
+
+         any_core_active_this_tick.store(false);
+
          increment_cpu_tick();
      }
  }

@@ -227,7 +227,7 @@ bool Memory::create_process_space(uint32_t pid, size_t memory_bytes)
 {
     std::lock_guard lock(memory_mutex);
 
-    if (process_spaces.find(pid) != process_spaces.end()) {
+    if (process_spaces.contains(pid)) {
         return false;
     }
 

@@ -5,6 +5,9 @@
 #include "memory.h"
 #include <algorithm>
 
+
+constexpr size_t INVALID_ADDRESS = -1000;
+
 std::optional<uint32_t> BackingStore::allocate_slot()
 {
     std::lock_guard lock(store_mutex);
@@ -401,6 +404,9 @@ uint32_t Memory::get_var_address(uint32_t pid, std::unordered_map<std::string, s
 
     if (auto var_it = symbol_table.find(var_name); var_it != symbol_table.end()) return static_cast<uint32_t>(var_it->second);
 
+    if (symbol_table.size() >= 32) {
+        return 9999999; // invalid address
+    }
     auto& process_space = it->second;
 
     thread_local std::unordered_map<uint32_t, uint32_t> process_next_addr;

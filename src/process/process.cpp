@@ -227,13 +227,59 @@ std::shared_ptr<IInstruction> Process::fetch_instruction()
         return nullptr;
     }
 
-
     EncodedInstruction encoded{};
-    encoded.opcode = read_memory_byte(pc).value();
-    encoded.flags = read_memory_byte(pc + 1).value();
-    encoded.operand1 = read_memory_word(pc + 2).value();
-    encoded.operand2 = read_memory_word(pc + 4).value();
-    encoded.operand3 = read_memory_word(pc + 6).value();
+
+    // Check each memory read for access violations
+    auto opcode_opt = read_memory_byte(pc);
+    if (!opcode_opt) {
+        // Memory access violation - log error and return null
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction opcode at PC 0x{:04X} in process \"{}\". Terminating process.", pc, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.opcode = opcode_opt.value();
+
+    auto flags_opt = read_memory_byte(pc + 1);
+    if (!flags_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction flags at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 1, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.flags = flags_opt.value();
+
+    auto operand1_opt = read_memory_word(pc + 2);
+    if (!operand1_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction operand1 at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 2, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.operand1 = operand1_opt.value();
+
+    auto operand2_opt = read_memory_word(pc + 4);
+    if (!operand2_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction operand2 at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 4, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.operand2 = operand2_opt.value();
+
+    auto operand3_opt = read_memory_word(pc + 6);
+    if (!operand3_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction operand3 at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 6, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.operand3 = operand3_opt.value();
 
     return encoder->decode_instruction(encoded);
 }

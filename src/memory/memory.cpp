@@ -171,6 +171,24 @@ bool Memory::handle_page_fault(uint32_t pid, uint32_t page_number)
     return true;
 }
 
+bool Memory::is_valid_process_access(uint32_t pid, uint32_t virtual_address) const
+{
+    std::lock_guard lock(memory_mutex);
+
+    auto it = process_spaces.find(pid);
+    if (it == process_spaces.end()) return false;
+
+    uint32_t page_num = get_page_number(virtual_address);
+    auto& process_space = it->second;
+
+    if (page_num >= process_space->max_pages) return false;
+
+    if (!process_space->page_table.entries[page_num].is_valid()) return false;
+
+    return true;
+}
+
+
 bool Memory::can_allocate_process(size_t required_memory_bytes) const
 {
     std::lock_guard lock(memory_mutex);
@@ -231,9 +249,10 @@ void Memory::destroy_process_space(uint32_t pid)
     std::lock_guard lock(memory_mutex);
 
     auto it = process_spaces.find(pid);
-    if (it == process_spaces.end()) return;
+    if (it == process_spaces.end())
+        return;
 
-    auto& process_space = it->second;
+    auto &process_space = it->second;
 
     size_t memory_to_free = process_space->max_pages * page_size;
 
@@ -257,7 +276,7 @@ void Memory::destroy_process_space(uint32_t pid)
 
     replacement_queue = std::move(new_replacement_queue);
 
-    for (const auto& [page, slot] : process_space->page_to_backing_slot) {
+    for (const auto &[page, slot]: process_space->page_to_backing_slot) {
         backing_store->free_slot(slot);
     }
 
@@ -265,7 +284,7 @@ void Memory::destroy_process_space(uint32_t pid)
 }
 
 
-uint8_t Memory::read_byte(uint16_t address) const
+std::optional<uint8_t> Memory::read_byte(uint16_t address) const
 {
     if (address < memory.size()) {
         return memory[address];
@@ -273,78 +292,100 @@ uint8_t Memory::read_byte(uint16_t address) const
     return 0;
 }
 
-uint8_t Memory::read_byte(uint32_t pid, uint32_t virtual_address)
+std::optional<uint8_t> Memory::read_byte(uint32_t pid, uint32_t virtual_address)
 {
+    if (!is_valid_process_access(pid, virtual_address)) return std::nullopt;
+
     std::lock_guard lock(memory_mutex);
 
-    auto it = process_spaces.find(pid);
-    if (it == process_spaces.end()) return 0;
+    const auto it = process_spaces.find(pid);
+    if (it == process_spaces.end())
+        return std::nullopt;
 
-    uint32_t page_num = get_page_number(virtual_address);
-    uint32_t offset = get_page_offset(virtual_address);
+    const uint32_t page_num = get_page_number(virtual_address);
+    const uint32_t offset = get_page_offset(virtual_address);
 
-    if (!handle_page_fault(pid, page_num)) return 0; // FIXED: was virtual_address, should be page_num
+    if (!handle_page_fault(pid, page_num)) return std::nullopt;
 
-    auto& page_entry = it->second->page_table[page_num];
+    auto &page_entry = it->second->page_table[page_num];
     page_entry.set_referenced(true);
 
-    uint32_t physical_addr = get_physical_address(page_entry.frame_num, offset);
+    const uint32_t physical_addr = get_physical_address(page_entry.frame_num, offset);
     return memory[physical_addr];
 }
 
-void Memory::write_byte(uint16_t address, uint8_t value)
+bool Memory::write_byte(uint16_t address, uint8_t value)
 {
     if (address < memory.size()) {
         memory[address] = value;
+        return true;
     }
+
+    return false;
 }
 
-void Memory::write_byte(uint32_t pid, uint32_t virtual_address, uint8_t value)
+bool Memory::write_byte(uint32_t pid, uint32_t virtual_address, uint8_t value)
 {
+    if (!is_valid_process_access(pid, virtual_address)) return false;
+
     std::lock_guard lock(memory_mutex);
 
-    auto it = process_spaces.find(pid);
-    if (it == process_spaces.end()) return;
+    const auto it = process_spaces.find(pid);
+    if (it == process_spaces.end()) return false;
 
     uint32_t page_num = get_page_number(virtual_address);
     uint32_t offset = get_page_offset(virtual_address);
 
-    if (!handle_page_fault(pid, page_num)) return;
+    if (!handle_page_fault(pid, page_num)) return false;
 
-    auto& page_entry = it->second->page_table[page_num];
+    auto &page_entry = it->second->page_table[page_num];
     page_entry.set_referenced(true);
     page_entry.set_dirty(true);
 
-    uint32_t physical_addr = get_physical_address(page_entry.frame_num, offset);
+    const uint32_t physical_addr = get_physical_address(page_entry.frame_num, offset);
     memory[physical_addr] = value;
+
+    return true;
 }
 
 
-uint16_t Memory::read_word(uint16_t address) const
+std::optional<uint16_t> Memory::read_word(uint16_t address) const
 {
-    uint8_t low = read_byte(address);
-    uint8_t high = read_byte(address + 1);
-    return static_cast<uint16_t>(low) | (static_cast<uint16_t>(high) << 8);
+    const auto low = read_byte(address);
+    const auto high = read_byte(address + 1);
+
+    if (low.has_value() && high.has_value()) {
+        return static_cast<uint16_t>(low.value()) | (static_cast<uint16_t>(high.value()) << 8);
+    }
+
+    return std::nullopt;
 }
 
-uint16_t Memory::read_word(uint32_t pid, uint32_t virtual_address)
+std::optional<uint16_t> Memory::read_word(uint32_t pid, uint32_t virtual_address)
 {
-    uint8_t low = read_byte(pid, virtual_address);
-    uint8_t high = read_byte(pid, virtual_address + 1);
-    return static_cast<uint16_t>(low) | (static_cast<uint16_t>(high) << 8);
+    const auto low = read_byte(pid, virtual_address);
+    const auto high = read_byte(pid, virtual_address + 1);
+
+    if (low.has_value() && high.has_value()) {
+        return static_cast<uint16_t>(*low) | (static_cast<uint16_t>(*high) << 8);
+    }
+
+    return std::nullopt;
 }
 
 
-void Memory::write_word(uint16_t address, uint16_t value)
+bool Memory::write_word(uint16_t address, uint16_t value)
 {
     write_byte(address, value & 0xff);
     write_byte(address + 1, (value >> 8) & 0xff);
 }
 
-void Memory::write_word(uint32_t pid, uint16_t virtual_address, uint16_t value)
+bool Memory::write_word(uint32_t pid, uint16_t virtual_address, uint16_t value)
 {
-    write_byte(pid, virtual_address, value & 0xff);
-    write_byte(pid, virtual_address + 1, (value >> 8) & 0xff);
+    const bool low_ok = write_byte(pid, virtual_address, value & 0xff);
+    const bool high_ok = write_byte(pid, virtual_address + 1, (value >> 8) & 0xff);
+
+    return low_ok && high_ok;
 }
 
 
@@ -357,11 +398,10 @@ uint32_t Memory::get_var_address(uint32_t pid, std::unordered_map<std::string, s
 {
     std::lock_guard lock(memory_mutex);
 
-    auto it = process_spaces.find(pid);
+    const auto it = process_spaces.find(pid);
     if (it == process_spaces.end()) return 0;
 
-    auto var_it = symbol_table.find(var_name);
-    if (var_it != symbol_table.end()) return static_cast<uint32_t>(var_it->second); // FIXED: logic was inverted
+    if (auto var_it = symbol_table.find(var_name); var_it != symbol_table.end()) return static_cast<uint32_t>(var_it->second);
 
     auto& process_space = it->second;
 

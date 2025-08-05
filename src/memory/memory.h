@@ -166,8 +166,7 @@ class Memory {
     std::optional<uint32_t> allocate_frame();
     std::optional<uint32_t> evict_and_allocate();
     bool handle_page_fault(uint32_t process_id, uint32_t page_number);
-
-
+    bool is_valid_process_access(uint32_t pid, uint32_t virtual_address) const;
 
 public:
     explicit Memory(const size_t total_memory = 65536, const size_t frame_size = 4096, const size_t = 256) : memory(total_memory, 0), frames(total_memory / frame_size), page_size(frame_size), max_overall_memory(total_memory), backing_store(std::make_unique<BackingStore>("test_store.txt", 1024, frame_size))
@@ -192,17 +191,17 @@ public:
     uint64_t get_pages_paged_in() const { return pages_paged_in.load(); }
     uint64_t get_pages_paged_out() const { return pages_paged_out.load(); }
 
-    [[nodiscard]] uint8_t read_byte(uint16_t address) const;
-    [[nodiscard]] uint8_t read_byte(uint32_t pid, uint32_t virtual_address);
+    [[nodiscard]] std::optional<uint8_t> read_byte(uint16_t address) const;
+    [[nodiscard]] std::optional<uint8_t> read_byte(uint32_t pid, uint32_t virtual_address);
 
-    void write_byte(uint16_t address, uint8_t value);
-    void write_byte(uint32_t pid, uint32_t virtual_address, uint8_t value);
+    bool write_byte(uint16_t address, uint8_t value);
+    bool write_byte(uint32_t pid, uint32_t virtual_address, uint8_t value);
 
-    [[nodiscard]] uint16_t read_word(uint16_t address) const;
-    [[nodiscard]] uint16_t read_word(uint32_t pid, uint32_t virtual_address);
+    [[nodiscard]] std::optional<uint16_t> read_word(uint16_t address) const;
+    [[nodiscard]] std::optional<uint16_t> read_word(uint32_t pid, uint32_t virtual_address);
 
-    void write_word(uint16_t address, uint16_t value);
-    void write_word(uint32_t pid, uint16_t virtual_address, uint16_t value);
+    bool write_word(uint16_t address, uint16_t value);
+    bool write_word(uint32_t pid, uint16_t virtual_address, uint16_t value);
 
     void clear();
     [[nodiscard]] size_t size() const { return memory.size(); }

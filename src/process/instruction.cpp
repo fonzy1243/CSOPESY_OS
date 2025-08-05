@@ -296,7 +296,7 @@ std::string InstructionEncoder::decode_string(const uint16_t str_id) const
 {
     if (str_id < r_str_table.size()) return r_str_table[str_id];
 
-    return "";
+    return "<MISSING_STRING_" + std::to_string(str_id) + ">";
 }
 
 EncodedInstruction InstructionEncoder::encode_instruction(const std::shared_ptr<IInstruction> &instruction)

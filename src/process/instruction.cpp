@@ -14,7 +14,16 @@ void PrintInstruction::execute(Process &process)
     std::string final_message = message;
     if (has_variable) {
         size_t var_address = process.get_var_address(variable_name);
-        uint16_t var_value = process.read_memory_word(var_address);
+        auto var_res = process.read_memory_word(var_address);
+        if (!var_res) {
+            std::lock_guard lock(process.log_mutex);
+            std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+            process.print_logs.push_back(log_entry);
+            process.output_buffer.push_back(log_entry);
+            return;
+        }
+
+        uint16_t var_value = var_res.value();
 
         final_message = message + " " + variable_name + " = " + std::to_string(var_value);
     }
@@ -43,7 +52,7 @@ void DeclareInstruction::execute(Process &process)
     uint16_t core_id = process.assigned_core.load();
 
     size_t address = process.get_var_address(var_name);
-    process.write_memory_word(address, value);
+    bool write_res = process.write_memory_word(address, value);
 
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
@@ -51,9 +60,15 @@ void DeclareInstruction::execute(Process &process)
 
     localtime_s(&tm, &time_t);
 
-    std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"DECLARE {} = {}\"",
-        tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
-        core_id, var_name, value);
+    std::string log_entry;
+
+    if (write_res) {
+        log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"DECLARE {} = {}\"",
+            tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+            core_id, var_name, value);
+    } else {
+        log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+    }
 
     std::lock_guard lock(process.log_mutex);
 
@@ -78,7 +93,15 @@ void AddInstruction::execute(Process &process)
         val2_str = std::to_string(val2);
     } else {
         const size_t var2_address = process.get_var_address(var2);
-        val2 = process.read_memory_word(var2_address);
+        auto var2_read = process.read_memory_word(var2_address);
+        if (!var2_read) {
+            std::lock_guard lock(process.log_mutex);
+            std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+            process.print_logs.push_back(log_entry);
+            process.output_buffer.push_back(log_entry);
+            return;
+        }
+        val2 = process.read_memory_word(var2_address).value();
         val2_str = std::format("{}({})", var2, val2);
     }
 
@@ -86,7 +109,15 @@ void AddInstruction::execute(Process &process)
         val3_str = std::to_string(val3);
     } else {
         const size_t var3_address = process.get_var_address(var3);
-        val3 = process.read_memory_word(var3_address);
+        auto val3_read = process.read_memory_word(var3_address);
+        if (!val3_read) {
+            std::lock_guard lock(process.log_mutex);
+            std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+            process.print_logs.push_back(log_entry);
+            process.output_buffer.push_back(log_entry);
+            return;
+        }
+        val3 = process.read_memory_word(var3_address).value();
         val3_str = std::format("{}({})", var3, val3);
     }
 
@@ -95,7 +126,7 @@ void AddInstruction::execute(Process &process)
         result = UINT16_MAX; // clamp result
     }
 
-    process.write_memory_word(var1_address, static_cast<uint16_t>(result));
+    bool write_res = process.write_memory_word(var1_address, static_cast<uint16_t>(result));
 
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
@@ -103,9 +134,14 @@ void AddInstruction::execute(Process &process)
 
     localtime_s(&tm, &time_t);
 
-    std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"ADD {} = {} + {} = {}\"",
-    tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
-    core_id, var1, val2_str, val3_str, static_cast<uint16_t>(result));
+    std::string log_entry;
+    if (write_res) {
+        log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"ADD {} = {} + {} = {}\"",
+        tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+        core_id, var1, val2_str, val3_str, static_cast<uint16_t>(result));
+    } else {
+        log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+    }
 
     std::lock_guard lock(process.log_mutex);
 
@@ -130,7 +166,15 @@ void SubtractInstruction::execute(Process &process)
         val2_str = std::to_string(val2);
     } else {
         const size_t var2_address = process.get_var_address(var2);
-        val2 = process.read_memory_word(var2_address);
+        auto val2_read = process.read_memory_word(var2_address);
+        if (!val2_read) {
+            std::lock_guard lock(process.log_mutex);
+            std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+            process.print_logs.push_back(log_entry);
+            process.output_buffer.push_back(log_entry);
+            return;
+        }
+        val2 = process.read_memory_word(var2_address).value();
         val2_str = std::format("{}({})", var2, val2);
     }
 
@@ -138,7 +182,15 @@ void SubtractInstruction::execute(Process &process)
         val3_str = std::to_string(val3);
     } else {
         const size_t var3_address = process.get_var_address(var3);
-        val3 = process.read_memory_word(var3_address);
+        auto val3_read = process.read_memory_word(var3_address);
+        if (!val3_read) {
+            std::lock_guard lock(process.log_mutex);
+            std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+            process.print_logs.push_back(log_entry);
+            process.output_buffer.push_back(log_entry);
+            return;
+        }
+        val3 = process.read_memory_word(var3_address).value();
         val3_str = std::format("{}({})", var3, val3);
     }
 
@@ -149,7 +201,7 @@ void SubtractInstruction::execute(Process &process)
         result = 0;
     }
 
-    process.write_memory_word(var1_address, result);
+    bool write_res = process.write_memory_word(var1_address, result);
 
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
@@ -157,9 +209,14 @@ void SubtractInstruction::execute(Process &process)
 
     localtime_s(&tm, &time_t);
 
-    std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"SUBTRACT {} = {} - {} = {}\"",
-     tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
-     core_id, var1, val2_str, val3_str, result);
+    std::string log_entry;
+    if (write_res) {
+        log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"SUBTRACT {} = {} - {} = {}\"",
+         tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+         core_id, var1, val2_str, val3_str, result);
+    } else {
+        log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+    }
 
     std::lock_guard lock(process.log_mutex);
 
@@ -222,9 +279,17 @@ std::string ForInstruction::get_type_name() const
 void ReadInstruction::execute(Process &process)
 {
     uint16_t core_id = process.assigned_core.load();
-    uint16_t val = process.read_memory_word(address);
+    auto val_read = process.read_memory_word(address);
+    if (!val_read) {
+        std::lock_guard lock(process.log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+        process.print_logs.push_back(log_entry);
+        process.output_buffer.push_back(log_entry);
+        return;
+    }
+    uint16_t val = process.read_memory_word(address).value();
     uint32_t var_address = process.get_var_address(var);
-    process.write_memory_word(var_address, val);
+    bool write_res = process.write_memory_word(var_address, val);
 
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
@@ -232,9 +297,14 @@ void ReadInstruction::execute(Process &process)
 
     localtime_s(&tm, &time_t);
 
-    std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"READ {} @ 0x{:04X} -> {}\"",
-     tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
-     core_id, var, address, val);
+    std::string log_entry;
+    if (write_res) {
+        log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"READ {} @ 0x{:04X} -> {}\"",
+         tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+         core_id, var, address, val);
+    } else {
+        log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+    }
 
     std::lock_guard lock(process.log_mutex);
 
@@ -251,8 +321,16 @@ std::string ReadInstruction::get_type_name() const
  void WriteInstruction::execute(Process &process)
 {
     uint16_t core_id = process.assigned_core.load();
-    uint16_t val = use_var ? process.read_memory_word(process.get_var_address(var_name)) : literal; //literal or variable
-    process.write_memory_word(address, val);
+    auto read_res = process.read_memory_word(process.get_var_address(var_name));
+    if (!read_res) {
+        std::lock_guard lock(process.log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+        process.print_logs.push_back(log_entry);
+        process.output_buffer.push_back(log_entry);
+        return;
+    }
+    uint16_t val = use_var ? read_res.value() : literal; //literal or variable
+    bool write_res = process.write_memory_word(address, val);
 
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
@@ -260,9 +338,14 @@ std::string ReadInstruction::get_type_name() const
 
     localtime_s(&tm, &time_t);
 
-    std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"WRITE @0x{:04X} -> {}\"",
-     tm.tm_mon+1, tm.tm_mday, tm.tm_year+1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
-     core_id, address, val);
+    std::string log_entry;
+    if (write_res) {
+        log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"WRITE @0x{:04X} -> {}\"",
+         tm.tm_mon+1, tm.tm_mday, tm.tm_year+1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+         core_id, address, val);
+    } else {
+        log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+    }
 
     std::lock_guard lock(process.log_mutex);
 
@@ -463,7 +546,7 @@ void InstructionEncoder::store_str_table(const Process & process, const uint32_t
 {
     // Store number of strings first
     const uint16_t num_strings = static_cast<uint16_t>(r_str_table.size());
-    process.write_memory_word(base_address, num_strings);
+    bool write_ok = process.write_memory_word(base_address, num_strings);
 
     uint32_t current_addr = base_address + 2;
 
@@ -473,7 +556,7 @@ void InstructionEncoder::store_str_table(const Process & process, const uint32_t
         const uint16_t len = static_cast<uint16_t>(str.length());
 
         // Store length
-        process.write_memory_word(current_addr, len);
+        write_ok = process.write_memory_word(current_addr, len);
         current_addr += 2;
 
         // Store string data
@@ -485,7 +568,7 @@ void InstructionEncoder::store_str_table(const Process & process, const uint32_t
 
 
 void InstructionEncoder::load_str_table(const Process & process, const uint32_t base_address) {
-    const uint16_t num_strings = process.read_memory_word(base_address);
+    const uint16_t num_strings = process.read_memory_word(base_address).value();
     uint32_t current_addr = base_address + 2;
 
     r_str_table.clear();
@@ -493,14 +576,14 @@ void InstructionEncoder::load_str_table(const Process & process, const uint32_t 
     str_table.clear();
 
     for (uint16_t i = 1; i < num_strings; ++i) {
-        const uint16_t len = process.read_memory_word(current_addr);
+        const uint16_t len = process.read_memory_word(current_addr).value();
         current_addr += 2;
 
         std::string str;
         str.reserve(len);
 
         for (uint16_t j = 0; j < len; ++j) {
-            str += static_cast<char>(process.read_memory_byte(current_addr++));
+            str += static_cast<char>(process.read_memory_byte(current_addr++).value());
         }
 
         r_str_table[i] = str;

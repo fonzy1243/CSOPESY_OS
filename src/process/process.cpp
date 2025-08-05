@@ -135,25 +135,25 @@ uint32_t Process::get_var_address(const std::string &var_name)
     return memory->get_var_address(id, symbol_table, var_name);
 }
 
-uint8_t Process::read_memory_byte(uint32_t virtual_address) const {
+std::optional<uint8_t> Process::read_memory_byte(uint32_t virtual_address) const
+{
     return memory->read_byte(id, virtual_address);
 }
 
-void Process::write_memory_byte(uint32_t virtual_address, uint8_t value) const
+bool Process::write_memory_byte(uint32_t virtual_address, uint8_t value) const
 {
-    memory->write_byte(id, virtual_address, value);
+    return memory->write_byte(id, virtual_address, value);
 }
 
-uint16_t Process::read_memory_word(uint32_t virtual_address) const {
+std::optional<uint16_t> Process::read_memory_word(uint32_t virtual_address) const
+{
     return memory->read_word(id, virtual_address);
 }
 
-void Process::write_memory_word(uint32_t virtual_address, uint16_t value) const
+bool Process::write_memory_word(uint32_t virtual_address, uint16_t value) const
 {
-    memory->write_word(id, virtual_address, value);
+    return memory->write_word(id, virtual_address, value);
 }
-
-
 
 void Process::unroll_recursive(const std::vector<std::shared_ptr<IInstruction>> &to_expand,
                                std::vector<std::shared_ptr<IInstruction>> &target_list)
@@ -204,11 +204,11 @@ void Process::load_instructions_to_memory()
     for (const auto& inst : instructions) {
         EncodedInstruction encoded = encoder->encode_instruction(inst);
 
-        write_memory_byte(current_addr + 0, encoded.opcode);
-        write_memory_byte(current_addr + 1, encoded.flags);
-        write_memory_word(current_addr + 2, encoded.operand1);
-        write_memory_word(current_addr + 4, encoded.operand2);
-        write_memory_word(current_addr + 6, encoded.operand3);
+        bool opcode_ok = write_memory_byte(current_addr + 0, encoded.opcode);
+        bool flags_ok = write_memory_byte(current_addr + 1, encoded.flags);
+        bool op1_ok = write_memory_word(current_addr + 2, encoded.operand1);
+        bool op2_ok = write_memory_word(current_addr + 4, encoded.operand2);
+        bool op3_ok = write_memory_word(current_addr + 6, encoded.operand3);
 
         current_addr += sizeof(EncodedInstruction);
     }
@@ -229,11 +229,11 @@ std::shared_ptr<IInstruction> Process::fetch_instruction()
 
 
     EncodedInstruction encoded{};
-    encoded.opcode = read_memory_byte(pc);
-    encoded.flags = read_memory_byte(pc + 1);
-    encoded.operand1 = read_memory_word(pc + 2);
-    encoded.operand2 = read_memory_word(pc + 4);
-    encoded.operand3 = read_memory_word(pc + 6);
+    encoded.opcode = read_memory_byte(pc).value();
+    encoded.flags = read_memory_byte(pc + 1).value();
+    encoded.operand1 = read_memory_word(pc + 2).value();
+    encoded.operand2 = read_memory_word(pc + 4).value();
+    encoded.operand3 = read_memory_word(pc + 6).value();
 
     return encoder->decode_instruction(encoded);
 }

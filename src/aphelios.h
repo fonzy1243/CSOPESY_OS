@@ -52,7 +52,8 @@ private:
     std::atomic<bool> scheduler_generating_processes{false};
     std::thread process_generation_thread;
 
-    void create_screen(const std::string& name);
+    void create_screen(const std::string& name, const size_t memory_size);
+    void create_screen_with_instructions(const std::string& name, size_t memory_size, const std::string& raw_code);
     void switch_screen(const std::string& name);
     void exit_screen();
     void create_session(const std::string& session_name, bool has_leader, std::shared_ptr<Process> process);
@@ -60,6 +61,9 @@ private:
 
     void handle_screen_cmd(const std::string& input);
     void display_smi();
+    
+    void display_process_smi();
+    void display_vmstat();
     
     void start_process_generation();
     void stop_process_generation();

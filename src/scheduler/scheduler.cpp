@@ -116,6 +116,8 @@ void Scheduler::scheduler_loop()
 void Scheduler::add_process(std::shared_ptr<Process> process)
  {
      process->unroll_instructions();
+     process->load_instructions_to_memory();
+
      process->set_state(ProcessState::eReady);
 
      // Find the core with the least work for load balancing
@@ -143,6 +145,8 @@ void Scheduler::cpu_worker(uint16_t core_id)
      static std::atomic<uint64_t> global_quantum_counter{0};
      while (running.load()) {
          std::shared_ptr<Process> process_to_run = nullptr;
+         bool cpu_was_active = false;
+
 
          // First, check this core's dedicated queue
          {
@@ -171,6 +175,8 @@ void Scheduler::cpu_worker(uint16_t core_id)
          }
 
          if (process_to_run) {
+             cpu_was_active = true;
+
              // Add to running processes for monitoring
              {
                  std::lock_guard running_lock(running_mutex);
@@ -179,7 +185,7 @@ void Scheduler::cpu_worker(uint16_t core_id)
 
              uint32_t ticks_to_run = (scheduler_type == SchedulerType::FCFS) ? 0 : quantum_cycles;
 
-             process_to_run->execute(core_id, ticks_to_run, delay);
+             process_to_run->execute_from_memory(core_id, ticks_to_run, delay);
 
              // Remove from running processes
              {
@@ -187,17 +193,14 @@ void Scheduler::cpu_worker(uint16_t core_id)
                  std::erase(running_processes, process_to_run);
              }
 
-             const bool finished = (process_to_run->current_instruction.load() >= (int)process_to_run->instructions.size());
+             const uint32_t max_addr = process_to_run->get_code_segment_base() + (process_to_run->instructions.size() * sizeof(EncodedInstruction));
 
-             if (finished) {
+             if (const bool finished = (process_to_run->get_program_counter() >= max_addr)) {
                  process_to_run->set_state(ProcessState::eFinished);
                  std::lock_guard finished_lock(finished_mutex);
                  process_to_run->set_assigned_core(9999);
+                 process_to_run->free_process_memory();
                  finished_processes.push_back(process_to_run);
-                 // Free memory block
-                 if (process_to_run->mem_block_start != static_cast<size_t>(-1)) {
-                     process_to_run->memory->free_block(process_to_run->id);
-                 }
              } else if (process_to_run->get_state() == ProcessState::eWaiting) {
                  // Still waiting (e.g., sleeping)
                  std::lock_guard waiting_lock(waiting_mutex);
@@ -216,14 +219,16 @@ void Scheduler::cpu_worker(uint16_t core_id)
              // Quantum cycle tracking and memory snapshot
              if (scheduler_type == SchedulerType::RR) {
                  uint64_t prev = global_quantum_counter.fetch_add(1) + 1;
-                 if (prev % quantum_cycles == 0) {
-                     output_memory_snapshot(prev / quantum_cycles);
-                 }
              }
+         }
+
+         if (cpu_was_active) {
+            mark_core_active();
          } else {
              // No process to run, but don't sleep - just yield CPU briefly
              std::this_thread::yield();
          }
+
      }
  }
 
@@ -237,6 +242,45 @@ std::vector<std::shared_ptr<Process>> Scheduler::get_running()
  {
      std::lock_guard lock(running_mutex);
      return running_processes;
+ }
+
+std::vector<ProcessSnapshot> Scheduler::get_process_snapshots()
+ {
+     std::vector<ProcessSnapshot> snapshots;
+
+     // Get snapshots of running processes
+     {
+         std::lock_guard lock(running_mutex);
+         for (const auto& process : running_processes) {
+             if (process) {
+                 ProcessSnapshot snapshot;
+                 snapshot.id = process->id;
+                 snapshot.name = process->name;
+                 snapshot.state = process->get_state();
+                 snapshot.assigned_core = process->get_assigned_core();
+                 snapshot.status_string = process->get_status_string();
+                 snapshots.push_back(snapshot);
+             }
+         }
+     }
+
+     {
+         std::lock_guard lock(finished_mutex);
+         for (const auto& process : finished_processes) {
+             if (process) {
+                 ProcessSnapshot snapshot;
+                 snapshot.id = process->id;
+                 snapshot.name = process->name;
+                 snapshot.state = process->get_state();
+                 snapshot.assigned_core = process->get_assigned_core();
+                 snapshot.status_string = process->get_status_string();
+                 snapshots.push_back(snapshot);
+             }
+         }
+     }
+
+     return snapshots;
+
  }
 
 std::string Scheduler::get_status_string()
@@ -317,49 +361,4 @@ void Scheduler::write_utilization_report()
          out.close();
      }
  }
-
-void output_memory_snapshot(uint64_t quantum_cycle) {
-    if (!global_memory_ptr) return;
-    auto& memory = *global_memory_ptr;
-    auto blocks = memory.get_allocated_blocks();
-    auto free_blocks = memory.get_free_blocks();
-    size_t min_block_size = 4096; // Use mem_per_proc if available
-    size_t ext_frag = memory.calculate_external_fragmentation(min_block_size);
-    size_t total_in_mem = blocks.size();
-    // Timestamp
-    auto now = std::chrono::system_clock::now();
-    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
-    std::tm tm{};
-    localtime_s(&tm, &now_c);
-    std::ostringstream oss;
-    oss << "Timestamp: (" << std::put_time(&tm, "%m/%d/%Y %H:%M:%S") << ")\n";
-    oss << "Number of processes in memory: " << total_in_mem << "\n";
-    oss << "Total external fragmentation in KB: " << (ext_frag / 1024) << "\n";
-    // Print memory map (descending address)
-    oss << "----end---- = " << memory.size() << "\n";
-    size_t addr = memory.size();
-    // Sort blocks and free_blocks by start descending
-    std::vector<Memory::Block> all_blocks = blocks;
-    all_blocks.insert(all_blocks.end(), free_blocks.begin(), free_blocks.end());
-    std::sort(all_blocks.begin(), all_blocks.end(), [](const auto& a, const auto& b) { return a.start > b.start; });
-    for (const auto& b : all_blocks) {
-        if (b.free) {
-            oss << b.start + b.size << "\n";
-            oss << "(free)\n";
-            oss << b.start << "\n";
-        } else {
-            oss << b.start + b.size << "\n";
-            oss << "P" << b.process_id << "\n";
-            oss << b.start << "\n";
-        }
-    }
-    oss << "----start---- = 0\n";
-    // Write to file
-    std::string fname = std::format("memory_stamp_{}.txt", quantum_cycle);
-    std::ofstream out(fname);
-    if (out.is_open()) {
-        out << oss.str();
-        out.close();
-    }
-}
 

@@ -1,12 +1,14 @@
 #include "aphelios.h"
 
 #include <cassert>
+#include <charconv>
 #include <chrono>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/table.hpp>
 #include <random>
 #include <ranges>
+#include <regex>
 
 #include "cpu_tick.h"
 #include "process/instruction.h"
@@ -14,8 +16,8 @@
 
  ApheliOS::ApheliOS()
  {
-     shell = std::make_unique<Shell>(*this);
      memory = std::make_shared<Memory>();
+     shell = std::make_unique<Shell>(*this);
      create_session("pts", true, shell->shell_process);
      ShellUtils::print_header(shell->output_buffer);
      current_session->output_buffer = shell->output_buffer;
@@ -37,6 +39,13 @@ void ApheliOS::run_system_clock()
  {
      while (running.load()) {
          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+         if (any_core_active_this_tick.load()) {
+             increment_active_ticks();
+         }
+
+         any_core_active_this_tick.store(false);
+
          increment_cpu_tick();
      }
  }
@@ -122,11 +131,18 @@ void ApheliOS::process_command(const std::string &input_raw)
          scheduler->write_utilization_report();
          shell->output_buffer.emplace_back("Utilization report saved to logs/csopesy-log.txt");
      } else if (command_lower == "smi") {
-        display_smi();
+         display_smi();
+     } else if (command_lower == "vmstat") {
+         if (!in_main("vmstat")) return;
+         display_vmstat();
      } else if (command_lower == "process-smi") {
-         const std::string smi_output = current_session->process->get_smi_string();
-         shell->add_multiline_output(current_session->process->get_smi_string());
-         current_session->process->save_smi_to_file();
+         if (!is_initial_shell) {
+             const std::string smi_output = current_session->process->get_smi_string();
+             shell->add_multiline_output(current_session->process->get_smi_string());
+             current_session->process->save_smi_to_file();
+             return;
+         }
+         display_process_smi();
      } else if (!command.empty()) {
          shell->output_buffer.push_back(std::format("{}: command not found", command));
      }
@@ -149,6 +165,13 @@ bool ApheliOS::initialize(const std::string& config_file)
      }
 
      config = *config_result;
+
+     memory = std::make_shared<Memory>(config->max_overall_mem, config->mem_per_frame, config->max_overall_mem / config->mem_per_frame);
+     shell->shell_process->memory = memory;
+
+     if (current_session && current_session->process) {
+         current_session->process->memory = memory;
+     }
 
      scheduler = std::make_unique<Scheduler>(config->num_cpu);
 
@@ -193,34 +216,83 @@ void ApheliOS::handle_screen_cmd(const std::string &input)
      auto args = std::vector(words.begin(), words.end());
      if (args.empty()) return;
 
-     if (args[0] == "-S" && args.size() > 1) {
-         create_screen(std::string(args[1]));
+     if ((args[0] == "-S" || args[0] == "-s") && args.size() > 2) {
+         const std::string process_name = std::string(args[1]);
+         size_t memory_size = 0;
+
+         auto result = std::from_chars(args[2].data(), args[2].data() + args[2].size(), memory_size);
+         if (result.ec != std::errc()) {
+             shell->output_buffer.emplace_back("Error: invalid memory allocation");
+             return;
+         }
+
+         // Check that memory_size is within [64, 65536] and is power of 2
+         if (memory_size < 64 || memory_size > 65536 || (memory_size & (memory_size - 1)) != 0) {
+             shell->output_buffer.emplace_back("Error: invalid memory allocation");
+             return;
+         }
+
+         create_screen(process_name, memory_size);
+
+     } else if (args[0] == "-c" && args.size() > 3) {
+         const std::string process_name = std::string(args[1]);
+         size_t memory_size = 0;
+
+         auto result = std::from_chars(args[2].data(), args[2].data() + args[2].size(), memory_size);
+         if (result.ec != std::errc()) {
+             shell->output_buffer.emplace_back("Error: invalid memory allocation");
+             return;
+         }
+
+         if (memory_size < 64 || memory_size > 65536 || (memory_size & (memory_size - 1)) != 0) {
+             shell->output_buffer.emplace_back("Error: invalid memory allocation");
+             return;
+         }
+
+         std::string raw_instr = input.substr(input.find(args[2]) + args[2].length());
+         std::string instr_str = raw_instr.substr(raw_instr.find('"') + 1);
+         instr_str = instr_str.substr(0, instr_str.rfind('"'));
+
+         create_screen_with_instructions(process_name, memory_size, instr_str);
+
      } else if (args[0] == "-r" && args.size() > 1) {
          switch_screen(std::string(args[1]));
      } else if (args[0] == "-ls") {
          std::string status = scheduler->get_status_string();
          shell->add_multiline_output(status);
+     } else {
+         shell->output_buffer.emplace_back("Error: Wrong usage of the screen command");
      }
  }
 
 
-void ApheliOS::create_screen(const std::string &name)
+void ApheliOS::create_screen(const std::string &name, const size_t memory_size)
  {
      if (current_session) {
          current_session->output_buffer = shell->output_buffer;
      }
 
-     auto new_process = std::make_shared<Process>(current_pid++, name, this->memory);
-     // First-fit memory allocation
-     size_t mem_size = config ? config->min_mem_per_proc : 4096;
-     auto alloc = memory->allocate_block(new_process->id, mem_size);
-     if (!alloc) {
-         shell->output_buffer.push_back("[ERROR] Not enough memory to start process. Process moved to end of ready queue.");
-         // TODO: Optionally, add to ready queue for retry later (not started)
-         scheduler->add_process(new_process); // Will be retried by scheduler
+     size_t process_memory = memory_size;
+
+     // Check if there is enough memory to allocate this process
+     if (!memory->can_allocate_process(process_memory)) {
+         shell->output_buffer.emplace_back(std::format(
+             "Error: Not enough memory to create process '{}'. Available: {} bytes, Required: {} bytes",
+             name, memory->get_available_memory(), process_memory
+         ));
          return;
      }
-     new_process->mem_block_start = *alloc;
+
+     auto new_process = std::make_shared<Process>(current_pid++, name, memory);
+
+     // Try to create the process's memory space
+     if (!memory->create_process_space(new_process->id, process_memory)) {
+         shell->output_buffer.emplace_back(std::format(
+             "Error: Failed to allocate memory for process '{}'", name
+         ));
+         return;
+     }
+
      create_session(name, false, new_process);
      scheduler->add_process(new_process);
 
@@ -228,9 +300,161 @@ void ApheliOS::create_screen(const std::string &name)
 
      shell->output_buffer.push_back(std::format("Process name: {}", current_session->process->name));
      shell->output_buffer.push_back(std::format("Current time: {:%m/%d/%Y, %I:%M:%S %p}", current_session->createTime));
+     shell->output_buffer.push_back(std::format("Maximum Memory: {} bytes ({} pages)",
+         process_memory, memory->calculate_pages_needed(process_memory)));
+     shell->output_buffer.push_back(std::format("Memory allocated: {} bytes ({} pages)",
+         memory->get_process_memory_usage(new_process->id), memory->calculate_pages_needed(memory->get_process_memory_usage(new_process->id))));
+
 
      current_session->output_buffer = shell->output_buffer;
  }
+
+void ApheliOS::create_screen_with_instructions(const std::string& name, size_t memory_size, const std::string& instr_str) {
+    if (current_session) current_session->output_buffer = shell->output_buffer;
+
+    size_t process_memory = memory_size;
+
+    if (!memory->can_allocate_process(process_memory)) {
+        shell->output_buffer.emplace_back(std::format(
+            "Error: Not enough memory to create process '{}'. Available: {} bytes, Required: {} bytes",
+            name, memory->get_available_memory(), process_memory));
+        return;
+    }
+
+    auto new_process = std::make_shared<Process>(current_pid++, name, memory);
+    if (!memory->create_process_space(new_process->id, process_memory)) {
+        shell->output_buffer.emplace_back(std::format(
+            "Error: Failed to allocate memory for process '{}'", name));
+        return;
+    }
+
+    std::vector<std::string> instr_list;
+    std::stringstream ss(instr_str);
+    std::string token;
+    while (std::getline(ss, token, ';')) {
+        std::string cleaned = std::regex_replace(token, std::regex("^ +| +$|( ) +"), "$1");
+        if (!cleaned.empty()) instr_list.push_back(cleaned);
+    }
+
+    if (instr_list.size() < 1 || instr_list.size() > 50) {
+        shell->output_buffer.emplace_back("Error: instruction count must be between 1 and 50.");
+        return;
+    }
+
+    for (const std::string& line : instr_list) {
+        std::string instr;
+        std::string args_str;
+
+        // parenthesis cause print is PRINT(
+        size_t paren_pos = line.find('(');
+        size_t space_pos = line.find(' ');
+
+        // Checking where like the main instruction word ends
+        size_t end_pos;
+        if (paren_pos != std::string::npos && (space_pos == std::string::npos || paren_pos < space_pos)) {
+            end_pos = paren_pos;
+        } else if (space_pos != std::string::npos) {
+            end_pos = space_pos;
+        } else {
+            end_pos = line.length();
+        }
+
+        instr = line.substr(0, end_pos);
+        args_str = line.substr(end_pos);
+        args_str = std::regex_replace(args_str, std::regex("^ +"), "");  // Trim leading space
+
+        if (instr == "DECLARE") {
+            std::istringstream args(args_str);
+            std::string var;
+            uint16_t val;
+            args >> var >> val;
+            new_process->add_instruction(std::make_shared<DeclareInstruction>(var, val));
+        } else if (instr == "ADD") {
+            std::istringstream args(args_str);
+            std::string dest, op1, op2;
+            args >> dest >> op1 >> op2;
+            new_process->add_instruction(std::make_shared<AddInstruction>(dest, op1, op2));
+        } else if (instr == "SUBTRACT") {
+            std::istringstream args(args_str);
+            std::string dest, op1, op2;
+            args >> dest >> op1 >> op2;
+            new_process->add_instruction(std::make_shared<SubtractInstruction>(dest, op1, op2));
+        } else if (instr == "SLEEP") {
+            int ticks = std::stoi(args_str);
+            new_process->add_instruction(std::make_shared<SleepInstruction>(ticks));
+        } else if (instr == "PRINT") {
+            std::string rest = args_str;
+
+            // Remove outer parentheses from PRINT(...)
+            rest = std::regex_replace(rest, std::regex("^\\(|\\)$"), "");
+
+            size_t plus_pos = rest.find('+');
+            if (plus_pos != std::string::npos) {
+                std::string msg = rest.substr(0, plus_pos);
+                std::string var = rest.substr(plus_pos + 1);
+
+                // Unescape quotes
+                msg = std::regex_replace(msg, std::regex(R"(\\\")"), "\"");
+
+                // Remove outer quotes and trim
+                msg = std::regex_replace(msg, std::regex(R"(^ *\"|\" *$)"), "");
+                msg = std::regex_replace(msg, std::regex("^ +| +$"), "");
+
+                var = std::regex_replace(var, std::regex("^ +| +$"), "");
+
+                new_process->add_instruction(std::make_shared<PrintInstruction>(msg, var));
+            } else {
+                rest = std::regex_replace(rest, std::regex(R"(\\\")"), "\"");
+                rest = std::regex_replace(rest, std::regex(R"(^ *\"|\" *$)"), "");
+                rest = std::regex_replace(rest, std::regex("^ +| +$"), "");
+
+                new_process->add_instruction(std::make_shared<PrintInstruction>(rest));
+            }
+        } else if (instr == "READ") {
+            std::istringstream args(args_str);
+            std::string var, address;
+            args >> var >> address;
+            uint32_t var_address = std::stoul(address, nullptr, 0);
+            new_process->add_instruction(
+                std::make_shared<ReadInstruction>(var, var_address)
+            );
+        } else if (instr == "WRITE") {
+            std::istringstream args(args_str);
+            std::string address, var_val;
+            uint16_t value;
+
+            args >> address >> var_val;
+
+            uint32_t addr = std::stoul(address, nullptr, 0);
+
+            // Decide if var_val is a number or a variable name
+            if (!var_val.empty() && (std::isdigit(var_val[0]) || (var_val.size() > 1 && var_val[0] == '0' && (var_val[1] == 'x' || var_val[1] == 'X'))))
+            {
+                uint16_t lit = static_cast<uint16_t>(std::stoul(var_val, nullptr, 0));
+                new_process->add_instruction(std::make_shared<WriteInstruction>(addr, lit));
+            } else {
+                // Variable name, read value
+                new_process->add_instruction(std::make_shared<WriteInstruction>(addr, var_val));
+            }           
+        } else {
+            shell->output_buffer.push_back("Invalid instruction: " + instr);
+        }
+    }
+
+    create_session(name, false, new_process);
+    scheduler->add_process(new_process);
+
+    shell->output_buffer.clear();
+    shell->output_buffer.push_back(std::format("Process name: {}", new_process->name));
+    shell->output_buffer.push_back(std::format("Maximum Memory: {} bytes ({} pages)",
+        process_memory, memory->calculate_pages_needed(process_memory)));
+    shell->output_buffer.push_back(std::format("Memory allocated: {} bytes ({} pages)",
+        memory->get_process_memory_usage(new_process->id), memory->calculate_pages_needed(memory->get_process_memory_usage(new_process->id))));
+
+    shell->output_buffer.push_back("Instructions added: " + std::to_string(instr_list.size()));
+
+    current_session->output_buffer = shell->output_buffer;
+}
 
 void ApheliOS::switch_screen(const std::string &name)
  {
@@ -289,6 +513,98 @@ void ApheliOS::display_smi()
  {
      ShellUtils::display_smi(*shell);
  }
+
+void ApheliOS::display_vmstat() {
+     if (!is_initialized()) {
+         shell->output_buffer.emplace_back("Error: ApheliOS is not initialized.");
+         return;
+     }
+
+     size_t total_memory = memory->size();
+     size_t used_memory = memory->get_total_allocated_memory();
+     size_t free_memory = memory->get_available_memory();
+
+     uint64_t idle_ticks = get_idle_ticks();
+     uint64_t active_ticks = get_active_ticks();
+     uint64_t total_ticks = get_cpu_tick();
+
+     uint64_t pages_in = memory->get_pages_paged_in();
+     uint64_t pages_out = memory->get_pages_paged_out();
+
+     shell->output_buffer.emplace_back(" ");
+     shell->output_buffer.emplace_back("===================================");
+     shell->output_buffer.emplace_back("|              VMSTAT             |");
+     shell->output_buffer.emplace_back("===================================");
+     shell->output_buffer.emplace_back(std::format("{:>12} B total memory", total_memory));
+     shell->output_buffer.emplace_back(std::format("{:>12} B used memory", used_memory));
+     shell->output_buffer.emplace_back(std::format("{:>12} B free memory", free_memory));
+     shell->output_buffer.emplace_back(std::format("{:>12} idle cpu ticks", idle_ticks));
+     shell->output_buffer.emplace_back(std::format("{:>12} active cpu ticks", active_ticks));
+     shell->output_buffer.emplace_back(std::format("{:>12} total cpu ticks", total_ticks));
+     shell->output_buffer.emplace_back(std::format("{:>12} pages paged in", pages_in));
+     shell->output_buffer.emplace_back(std::format("{:>12} pages paged out", pages_out));
+     shell->output_buffer.emplace_back("===================================");
+
+ }
+
+void ApheliOS::display_process_smi() {
+    if (!is_initialized()) {
+        shell->output_buffer.emplace_back("Error: ApheliOS is not initialized.");
+        return;
+    }
+
+    auto process_snapshots = scheduler->get_process_snapshots();
+
+    // Calculate CPU utilization from snapshots
+    int cores_used = 0;
+    for (const auto& snapshot : process_snapshots) {
+        if (snapshot.state == ProcessState::eRunning && snapshot.assigned_core != 9999) {
+            cores_used++;
+        }
+    }
+
+    float cpu_util = (config->num_cpu > 0) ? (static_cast<float>(cores_used) / config->num_cpu) * 100.0f : 0.0f;
+
+    // Get memory information
+    size_t total_memory = memory->size();
+    size_t allocated_memory = memory->get_total_allocated_memory();
+    size_t available_memory = memory->get_available_memory();
+    float memory_util = (total_memory > 0) ? (static_cast<float>(allocated_memory) / total_memory) * 100.0f : 0.0f;
+
+    shell->output_buffer.emplace_back(" ");
+    shell->output_buffer.emplace_back("=================================================");
+    shell->output_buffer.emplace_back("| PROCESS-SMI V01.00 DRIVER-VERSION 1.0         |");
+    shell->output_buffer.emplace_back("=================================================\n");
+
+    shell->output_buffer.emplace_back(std::format("CPU-Util: {:.2f}%", cpu_util));
+    shell->output_buffer.emplace_back(std::format("Memory Usage: {}B / {}B", allocated_memory, total_memory));
+    shell->output_buffer.emplace_back(std::format("Memory Util: {:.2f}%", memory_util));
+
+    shell->output_buffer.emplace_back(" ");
+    shell->output_buffer.emplace_back("=================================================");
+    shell->output_buffer.emplace_back("Running processes and memory usage:");
+    shell->output_buffer.emplace_back("-------------------------------------------------");
+
+    // Filter for running processes and calculate memory for each
+    bool has_running_processes = false;
+    for (const auto& snapshot : process_snapshots) {
+        if (snapshot.state == ProcessState::eRunning && snapshot.assigned_core != 9999) {
+            has_running_processes = true;
+
+            size_t process_memory = memory->get_process_memory_usage(snapshot.id);
+            size_t process_pages = memory->calculate_pages_needed(process_memory);
+
+            shell->output_buffer.emplace_back(std::format("{:<20} {:<10}B (pages: {})",
+                snapshot.name, process_memory, process_pages));
+        }
+    }
+
+    if (!has_running_processes) {
+        shell->output_buffer.emplace_back("No running processes");
+    }
+
+    shell->output_buffer.emplace_back("=================================================");
+}
 
 void ApheliOS::start_process_generation()
 {
@@ -412,34 +728,29 @@ void ApheliOS::process_generation_worker()
     const int min_instructions = config->min_ins;
     const int max_instructions = config->max_ins;
     const int delays_per_exec = config->delays_per_exec;
+    const size_t min_mem_per_proc = config->min_mem_per_proc;
+    const size_t max_mem_per_proc = config->max_mem_per_proc;
 
-    auto cpu_tick_start = std::chrono::steady_clock::now();
-    int tick_count = 0;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<size_t> memory_dis(min_mem_per_proc, max_mem_per_proc);
 
-     uint64_t last_gen_tick = 0;
+    uint64_t last_gen_tick = 0;
 
     while (scheduler_generating_processes.load()) {
         uint64_t current_tick = get_cpu_tick();
 
         if (current_tick > last_gen_tick && (current_tick % batch_frequency) == 0) {
+            // Generate random memory requirement for this process
+            size_t base_process_memory = memory_dis(gen);
+
             // Generate a new dummy process
-            std::string process_name = std::format("p{:02d}", current_pid);  // Use current_pid instead of process_counter++
-
+            std::string process_name = std::format("p{:02d}", current_pid);
             auto new_process = std::make_shared<Process>(current_pid++, process_name, memory);
-            // First-fit memory allocation
-            auto alloc = memory->allocate_block(new_process->id, config ? config->min_mem_per_proc : 4096);
-            if (!alloc) {
-                // Not enough memory, move to end of ready queue for retry
-                scheduler->add_process(new_process);
-                last_gen_tick = current_tick;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                continue;
-            }
-            new_process->mem_block_start = *alloc;
 
-            // Create a session for this process (but don't make it current)
+            // Create session (but don't make it current)
             auto new_session = std::make_shared<Session>();
-            new_session->id = new_process->id;  // Use the process ID instead of current_sid++
+            new_session->id = new_process->id;
             new_session->name = process_name;
 
             auto now = std::chrono::system_clock::now();
@@ -448,124 +759,150 @@ void ApheliOS::process_generation_worker()
 
             new_session->process = new_process;
             new_process->session = new_session;
-
-            // Add session to sessions list (but don't change current_session)
             sessions.push_back(new_session);
 
             // Generate random number of instructions within min/max range
-            std::random_device rd;
-            std::mt19937 gen(rd());
             std::uniform_int_distribution<> dis(min_instructions, max_instructions);
             int target_instructions = dis(gen);
 
             // Random instruction generation setup
-            std::uniform_int_distribution<> instruction_type_dis(0, 5); // 6 instruction types
-            std::uniform_int_distribution<> value_dis(1, 100); // Random values for operations
-            std::uniform_int_distribution<> sleep_dis(1, 10); // Sleep duration in CPU ticks
-            
-            // Keep track of declared variables for use in operations and instruction count
+            std::uniform_int_distribution<> instruction_type_dis(0, 5);
+            std::uniform_int_distribution<> value_dis(1, 100);
+            std::uniform_int_distribution<> sleep_dis(1, 10);
+
+            // Keep track of declared variables and instruction count
             std::vector<std::string> declared_vars;
             int instruction_count = 0;
-            
-            // Add instructions to the process using random selection, respecting max instruction limit
+
+            // Add instructions to the process using random selection
             for (int i = 0; instruction_count < target_instructions; ++i) {
                 int instruction_type = instruction_type_dis(gen);
 
-                /* example of using new case for PRINT with variable
-                auto declared_print = std::make_shared<DeclareInstruction>("printvalue", 8);
-                new_process->add_instruction(declared_print);
-                auto print = std::make_shared<PrintInstruction>("Value from: ", "printvalue");
-                new_process->add_instruction(print);
-                */
-
                 switch (instruction_type) {
-                     case 0: { // PrintInstruction
-                         auto print_instruction = std::make_shared<PrintInstruction>(
-                             std::format("Hello world from {} instruction {}!", process_name, i)
-                         );
-                         new_process->add_instruction(print_instruction);
-                         instruction_count++; // Count this instruction
-                         break;
-                     }
-                     case 1: { // DeclareInstruction
-                         std::string var_name = std::format("var{}_{}", process_name, declared_vars.size());
-                         uint16_t value = value_dis(gen);
-                         auto declare_instruction = std::make_shared<DeclareInstruction>(var_name, value);
-                         new_process->add_instruction(declare_instruction);
-                         declared_vars.push_back(var_name);
-                         instruction_count++; // Count this instruction
-                         break;
-                     }
-                     case 2: { // AddInstruction
-                         if (declared_vars.size() >= 2) {
-                             // Use existing variables
-                             std::uniform_int_distribution<> var_dis(0, declared_vars.size() - 1);
-                             std::string result_var = std::format("result{}_{}", process_name, i);
-                             std::string var1 = declared_vars[var_dis(gen)];
-                             std::string var2 = declared_vars[var_dis(gen)];
-                             auto add_instruction = std::make_shared<AddInstruction>(result_var, var1, var2);
-                             new_process->add_instruction(add_instruction);
-                             declared_vars.push_back(result_var);
-                         } else {
-                             // Use literal values
-                             std::string result_var = std::format("result{}_{}", process_name, i);
-                             uint16_t val1 = value_dis(gen);
-                             uint16_t val2 = value_dis(gen);
-                             auto add_instruction = std::make_shared<AddInstruction>(result_var, val1, val2);
-                             new_process->add_instruction(add_instruction);
-                             declared_vars.push_back(result_var);
-                         }
-                         instruction_count++; // Count this instruction
-                         break;
-                     }
-                     case 3: { // SubtractInstruction
-                         if (declared_vars.size() >= 2) {
-                             // Use existing variables
-                             std::uniform_int_distribution<> var_dis(0, declared_vars.size() - 1);
-                             std::string result_var = std::format("diff{}_{}", process_name, i);
-                             std::string var1 = declared_vars[var_dis(gen)];
-                             std::string var2 = declared_vars[var_dis(gen)];
-                             auto subtract_instruction = std::make_shared<SubtractInstruction>(result_var, var1, var2);
-                             new_process->add_instruction(subtract_instruction);
-                             declared_vars.push_back(result_var);
-                         } else {
-                             // Use literal values
-                             std::string result_var = std::format("diff{}_{}", process_name, i);
-                             uint16_t val1 = value_dis(gen);
-                             uint16_t val2 = value_dis(gen);
-                             auto subtract_instruction = std::make_shared<SubtractInstruction>(result_var, val1, val2);
-                             new_process->add_instruction(subtract_instruction);
-                             declared_vars.push_back(result_var);
-                         }
-                         instruction_count++; // Count this instruction
-                         break;
-                     }
-                     case 4: { // SleepInstruction
-                         uint8_t sleep_time = sleep_dis(gen);
-                         auto sleep_instruction = std::make_shared<SleepInstruction>(sleep_time);
-                         new_process->add_instruction(sleep_instruction);
-                         instruction_count++; // Count this instruction
-                         break;
-                     }
-                     case 5: { // ForInstruction
-                         if (instruction_count < target_instructions) {
-                             auto for_instruction = generate_random_for_instruction(
-                                 process_name, i, declared_vars, gen, value_dis, sleep_dis, 0, instruction_count, target_instructions, 1
-                             );
-                             new_process->add_instruction(for_instruction);
-                             // Note: ForInstruction itself doesn't count, but its contents do (already counted in helper function)
-                         }
-                         break;
-                     }
-                 }
+                    case 0: { // PrintInstruction
+                        auto print_instruction = std::make_shared<PrintInstruction>(
+                            std::format("Hello world from {} instruction {} (mem: {} bytes)!",
+                                      process_name, i, base_process_memory)
+                        );
+                        new_process->add_instruction(print_instruction);
+                        instruction_count++;
+                        break;
+                    }
+                    case 1: { // DeclareInstruction
+                        std::string var_name = std::format("var{}_{}", process_name, declared_vars.size());
+                        uint16_t value = value_dis(gen);
+                        auto declare_instruction = std::make_shared<DeclareInstruction>(var_name, value);
+                        new_process->add_instruction(declare_instruction);
+                        declared_vars.push_back(var_name);
+                        instruction_count++;
+                        break;
+                    }
+                    case 2: { // AddInstruction
+                        if (declared_vars.size() >= 2) {
+                            std::uniform_int_distribution<> var_dis(0, declared_vars.size() - 1);
+                            std::string result_var = std::format("result{}_{}", process_name, i);
+                            std::string var1 = declared_vars[var_dis(gen)];
+                            std::string var2 = declared_vars[var_dis(gen)];
+                            auto add_instruction = std::make_shared<AddInstruction>(result_var, var1, var2);
+                            new_process->add_instruction(add_instruction);
+                            declared_vars.push_back(result_var);
+                        } else {
+                            std::string result_var = std::format("result{}_{}", process_name, i);
+                            uint16_t val1 = value_dis(gen);
+                            uint16_t val2 = value_dis(gen);
+                            auto add_instruction = std::make_shared<AddInstruction>(result_var, val1, val2);
+                            new_process->add_instruction(add_instruction);
+                            declared_vars.push_back(result_var);
+                        }
+                        instruction_count++;
+                        break;
+                    }
+                    case 3: { // SubtractInstruction
+                        if (declared_vars.size() >= 2) {
+                            std::uniform_int_distribution<> var_dis(0, declared_vars.size() - 1);
+                            std::string result_var = std::format("diff{}_{}", process_name, i);
+                            std::string var1 = declared_vars[var_dis(gen)];
+                            std::string var2 = declared_vars[var_dis(gen)];
+                            auto subtract_instruction = std::make_shared<SubtractInstruction>(result_var, var1, var2);
+                            new_process->add_instruction(subtract_instruction);
+                            declared_vars.push_back(result_var);
+                        } else {
+                            std::string result_var = std::format("diff{}_{}", process_name, i);
+                            uint16_t val1 = value_dis(gen);
+                            uint16_t val2 = value_dis(gen);
+                            auto subtract_instruction = std::make_shared<SubtractInstruction>(result_var, val1, val2);
+                            new_process->add_instruction(subtract_instruction);
+                            declared_vars.push_back(result_var);
+                        }
+                        instruction_count++;
+                        break;
+                    }
+                    case 4: { // SleepInstruction
+                        uint8_t sleep_time = sleep_dis(gen);
+                        auto sleep_instruction = std::make_shared<SleepInstruction>(sleep_time);
+                        new_process->add_instruction(sleep_instruction);
+                        instruction_count++;
+                        break;
+                    }
+                    case 5: { // ForInstruction
+                        if (instruction_count < target_instructions) {
+                            auto for_instruction = generate_random_for_instruction(
+                                process_name, i, declared_vars, gen, value_dis, sleep_dis,
+                                0, instruction_count, target_instructions, 1
+                            );
+                            new_process->add_instruction(for_instruction);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // FIXED: Calculate total memory requirements properly
+            size_t code_segment_size = instruction_count * sizeof(EncodedInstruction);
+
+            // Estimate string table size based on instructions and variable names
+            size_t estimated_string_table_size = 0;
+            estimated_string_table_size += instruction_count * 30; // Average string length per instruction
+            estimated_string_table_size += declared_vars.size() * 15; // Average variable name length
+            estimated_string_table_size = std::max(estimated_string_table_size, size_t(1024)); // Minimum 1KB
+
+            // Variable storage space (2 bytes per variable)
+            size_t variable_space = declared_vars.size() * 2 + 512; // Extra space for future variables
+
+            // Add padding between segments for safety
+            size_t padding = 1024;
+
+            // Calculate total required memory
+            size_t total_required_memory = base_process_memory +
+                                          code_segment_size +
+                                          estimated_string_table_size +
+                                          variable_space +
+                                          padding;
+
+            // Ensure minimum memory allocation
+            total_required_memory = std::max(total_required_memory, size_t(8192)); // 8KB minimum
+
+            // Check if we have enough memory before creating the process
+            // if (!memory->can_allocate_process(total_required_memory)) {
+            //     // Skip this generation cycle - not enough memory
+            //     last_gen_tick = current_tick;
+            //     std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            //     continue;
+            // }
+
+            // Create process space with the properly calculated memory
+            if (!memory->create_process_space(new_process->id, total_required_memory)) {
+                // Failed to allocate memory, skip this process
+                last_gen_tick = current_tick;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
             }
 
             scheduler->add_process(new_process);
-
-            tick_count = current_tick;
+            last_gen_tick = current_tick;
         }
 
-        // Sleep for a reasonable time to avoid CRASHINGGGG
+        // Sleep for a reasonable time to avoid busy waiting
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }

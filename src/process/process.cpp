@@ -1,18 +1,30 @@
 #include "process.h"
+#include "instruction.h"
 
 #include <filesystem>
 #include <ranges>
 
 #include "../cpu_tick.h"
 
-Process::Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory) : id(id), name(name), memory(memory)
+Process::Process(const uint16_t id, const std::string &name, const std::shared_ptr<Memory> &memory) : id(id), name(name), memory(memory), encoder(std::make_unique<InstructionEncoder>())
  {
     creation_time = std::chrono::system_clock::now();
-
     std::filesystem::create_directories("logs");
+
+    // memory->create_process_space(id, max_memory_pages);
  }
 
- Process::~Process(){}
+ Process::~Process()
+{
+    this->free_process_memory();
+}
+
+void Process::free_process_memory()
+{
+    if (memory) {
+        memory->destroy_process_space(id);
+    }
+}
 
 void Process::execute(uint16_t core_id, uint32_t quantum, uint32_t delay)
 {
@@ -47,6 +59,7 @@ void Process::execute(uint16_t core_id, uint32_t quantum, uint32_t delay)
 void Process::add_instruction(std::shared_ptr<IInstruction> instruction)
 {
     instructions.push_back(instruction);
+    str_table_base = (instructions.size() * sizeof(EncodedInstruction)) + 0x100;
 }
 
 void Process::generate_print_instructions()
@@ -78,16 +91,18 @@ std::string Process::get_status_string() const
     ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
     std::string formatted_time = ss.str();
 
+    uint32_t current_inst = (program_counter.load() - code_segment_base) / sizeof(EncodedInstruction);
+
     if (state_str == "Finished") {
         return std::format("{:<12} ({})  {:<10} {:>3}/{:<3}",
                         name, formatted_time, "Finished",
-                        current_instruction.load(), instructions.size());
+                        current_inst, instructions.size());
     }
     if (state_str == "Running") {
         std::string core_info = std::format("Core: {}", assigned_core.load());
             return std::format("{:<12} ({})  {:<10} {:>3}/{:<3}",
                         name, formatted_time, core_info,
-                        current_instruction.load(), instructions.size());
+                        current_inst, instructions.size());
     }
 
     return "debug";
@@ -107,10 +122,37 @@ std::string Process::get_smi_string() const
     for (const auto &log: print_logs)
         out << "  " << log << "\n";
 
-    out << std::format("Current instruction line: {}\n", current_instruction.load());
+    uint32_t current_inst = (program_counter.load() - code_segment_base) / sizeof(EncodedInstruction);
+
+    out << std::format("Current instruction line: {}\n", current_inst);
     out << std::format("Lines of code: {}\n", instructions.size());
 
     return out.str();
+}
+
+uint32_t Process::get_var_address(const std::string &var_name)
+{
+    return memory->get_var_address(id, symbol_table, var_name);
+}
+
+std::optional<uint8_t> Process::read_memory_byte(uint32_t virtual_address) const
+{
+    return memory->read_byte(id, virtual_address);
+}
+
+bool Process::write_memory_byte(uint32_t virtual_address, uint8_t value) const
+{
+    return memory->write_byte(id, virtual_address, value);
+}
+
+std::optional<uint16_t> Process::read_memory_word(uint32_t virtual_address) const
+{
+    return memory->read_word(id, virtual_address);
+}
+
+bool Process::write_memory_word(uint32_t virtual_address, uint16_t value) const
+{
+    return memory->write_word(id, virtual_address, value);
 }
 
 void Process::unroll_recursive(const std::vector<std::shared_ptr<IInstruction>> &to_expand,
@@ -150,5 +192,131 @@ void Process::save_smi_to_file()
     if (out.is_open()) {
         out << get_smi_string();
         out.close();
+    }
+}
+
+void Process::load_instructions_to_memory()
+{
+    encoder->store_str_table(*this, str_table_base);
+
+    uint32_t current_addr = code_segment_base;
+
+    for (const auto& inst : instructions) {
+        EncodedInstruction encoded = encoder->encode_instruction(inst);
+
+        bool opcode_ok = write_memory_byte(current_addr + 0, encoded.opcode);
+        bool flags_ok = write_memory_byte(current_addr + 1, encoded.flags);
+        bool op1_ok = write_memory_word(current_addr + 2, encoded.operand1);
+        bool op2_ok = write_memory_word(current_addr + 4, encoded.operand2);
+        bool op3_ok = write_memory_word(current_addr + 6, encoded.operand3);
+
+        current_addr += sizeof(EncodedInstruction);
+    }
+
+
+    program_counter.store(code_segment_base);
+}
+
+// This function may return null. Check for this in your code if you use it
+std::shared_ptr<IInstruction> Process::fetch_instruction()
+{
+    uint32_t pc = program_counter.load();
+
+    uint32_t max_addr = code_segment_base + (instructions.size() * sizeof(EncodedInstruction));
+    if (pc >= max_addr) {
+        return nullptr;
+    }
+
+    EncodedInstruction encoded{};
+
+    // Check each memory read for access violations
+    auto opcode_opt = read_memory_byte(pc);
+    if (!opcode_opt) {
+        // Memory access violation - log error and return null
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction opcode at PC 0x{:04X} in process \"{}\". Terminating process.", pc, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.opcode = opcode_opt.value();
+
+    auto flags_opt = read_memory_byte(pc + 1);
+    if (!flags_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction flags at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 1, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.flags = flags_opt.value();
+
+    auto operand1_opt = read_memory_word(pc + 2);
+    if (!operand1_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction operand1 at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 2, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.operand1 = operand1_opt.value();
+
+    auto operand2_opt = read_memory_word(pc + 4);
+    if (!operand2_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction operand2 at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 4, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.operand2 = operand2_opt.value();
+
+    auto operand3_opt = read_memory_word(pc + 6);
+    if (!operand3_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction operand3 at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 6, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.operand3 = operand3_opt.value();
+
+    return encoder->decode_instruction(encoded);
+}
+
+void Process::increment_program_counter() { program_counter.fetch_add(sizeof(EncodedInstruction)); }
+
+
+void Process::execute_from_memory(uint16_t core_id, uint32_t quantum, uint32_t delay)
+{
+    start_time = std::chrono::system_clock::now();
+    uint32_t ticks_executed = 0;
+
+    const bool run_indefinitely = quantum == 0;
+
+    while (ticks_executed < quantum || run_indefinitely) {
+        if (get_state() == ProcessState::eWaiting) break;
+
+        uint64_t last_tick = get_cpu_tick();
+        uint64_t current_tick;
+        while ((current_tick = get_cpu_tick()) == last_tick) {
+            std::this_thread::yield();
+        }
+
+        ticks_executed++;
+
+        if (ticks_executed % (delay + 1) == 0) {
+            auto instruction = fetch_instruction();
+            if (!instruction) break;
+            instruction->execute(*this);
+            increment_program_counter();
+        }
+
+        if (get_state() == ProcessState::eWaiting) break;
+    }
+
+    uint32_t max_addr = code_segment_base + (instructions.size() * sizeof(EncodedInstruction));
+    if (program_counter.load() >= max_addr) {
+        end_time = std::chrono::system_clock::now();
     }
 }

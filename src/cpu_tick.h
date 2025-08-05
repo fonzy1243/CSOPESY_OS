@@ -4,8 +4,14 @@
 #include <cstdint>
 
 extern std::atomic<uint64_t> cpu_tick;
+extern std::atomic<uint64_t> active_cpu_ticks;
+extern std::atomic<bool> any_core_active_this_tick;
 
 inline uint64_t get_cpu_tick() { return cpu_tick.load(); }
 inline void increment_cpu_tick() { cpu_tick.fetch_add(1); }
+inline void increment_active_ticks() { active_cpu_ticks.fetch_add(1); }
+inline uint64_t get_idle_ticks() { return cpu_tick.load() - active_cpu_ticks.load(); }
+inline uint64_t get_active_ticks() { return active_cpu_ticks.load(); }
+inline void mark_core_active() { any_core_active_this_tick.store(true); }
 
 #endif // CPU_TICK_H 

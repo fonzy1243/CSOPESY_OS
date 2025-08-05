@@ -17,6 +17,14 @@
 
 enum class SchedulerType { FCFS, RR };
 
+struct ProcessSnapshot {
+    uint16_t id;
+    std::string name;
+    ProcessState state;
+    int assigned_core;
+    std::string status_string;
+};
+
 class Scheduler {
 private:
     std::queue<std::shared_ptr<Process>> ready_queue;
@@ -58,6 +66,7 @@ public:
 
     void add_process(std::shared_ptr<Process> process);
     void write_utilization_report();
+    std::vector<ProcessSnapshot> get_process_snapshots();
 
     std::vector<std::shared_ptr<Process>> get_finished();
     std::vector<std::shared_ptr<Process>> get_running();
@@ -72,7 +81,5 @@ public:
     uint32_t get_quantum_cycles() const { return quantum_cycles; }
     SchedulerType get_scheduler_type() const { return scheduler_type; }
 };
-
-void output_memory_snapshot(uint64_t quantum_cycle);
 
 #endif //SCHEDULER_H

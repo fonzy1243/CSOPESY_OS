@@ -80,13 +80,13 @@ public:
 
     std::string get_smi_string() const;
 
-    uint32_t get_var_address(const std::string& var_name);
+    uint32_t get_var_address(const std::string &var_name);
 
-    uint8_t read_memory_byte(uint32_t virtual_address) const;
-    void write_memory_byte(uint32_t virtual_address, uint8_t value) const;
+    std::optional<uint8_t> read_memory_byte(uint32_t virtual_address) const;
+    bool write_memory_byte(uint32_t virtual_address, uint8_t value) const;
 
-    uint16_t read_memory_word(uint32_t virtual_address) const;
-    void write_memory_word(uint32_t virtual_address, uint16_t value) const;
+    std::optional<uint16_t> read_memory_word(uint32_t virtual_address) const;
+    bool write_memory_word(uint32_t virtual_address, uint16_t value) const;
 
     void load_instructions_to_memory();
 

@@ -135,25 +135,25 @@ uint32_t Process::get_var_address(const std::string &var_name)
     return memory->get_var_address(id, symbol_table, var_name);
 }
 
-uint8_t Process::read_memory_byte(uint32_t virtual_address) const {
+std::optional<uint8_t> Process::read_memory_byte(uint32_t virtual_address) const
+{
     return memory->read_byte(id, virtual_address);
 }
 
-void Process::write_memory_byte(uint32_t virtual_address, uint8_t value) const
+bool Process::write_memory_byte(uint32_t virtual_address, uint8_t value) const
 {
-    memory->write_byte(id, virtual_address, value);
+    return memory->write_byte(id, virtual_address, value);
 }
 
-uint16_t Process::read_memory_word(uint32_t virtual_address) const {
+std::optional<uint16_t> Process::read_memory_word(uint32_t virtual_address) const
+{
     return memory->read_word(id, virtual_address);
 }
 
-void Process::write_memory_word(uint32_t virtual_address, uint16_t value) const
+bool Process::write_memory_word(uint32_t virtual_address, uint16_t value) const
 {
-    memory->write_word(id, virtual_address, value);
+    return memory->write_word(id, virtual_address, value);
 }
-
-
 
 void Process::unroll_recursive(const std::vector<std::shared_ptr<IInstruction>> &to_expand,
                                std::vector<std::shared_ptr<IInstruction>> &target_list)
@@ -204,11 +204,11 @@ void Process::load_instructions_to_memory()
     for (const auto& inst : instructions) {
         EncodedInstruction encoded = encoder->encode_instruction(inst);
 
-        write_memory_byte(current_addr + 0, encoded.opcode);
-        write_memory_byte(current_addr + 1, encoded.flags);
-        write_memory_word(current_addr + 2, encoded.operand1);
-        write_memory_word(current_addr + 4, encoded.operand2);
-        write_memory_word(current_addr + 6, encoded.operand3);
+        bool opcode_ok = write_memory_byte(current_addr + 0, encoded.opcode);
+        bool flags_ok = write_memory_byte(current_addr + 1, encoded.flags);
+        bool op1_ok = write_memory_word(current_addr + 2, encoded.operand1);
+        bool op2_ok = write_memory_word(current_addr + 4, encoded.operand2);
+        bool op3_ok = write_memory_word(current_addr + 6, encoded.operand3);
 
         current_addr += sizeof(EncodedInstruction);
     }
@@ -227,13 +227,59 @@ std::shared_ptr<IInstruction> Process::fetch_instruction()
         return nullptr;
     }
 
-
     EncodedInstruction encoded{};
-    encoded.opcode = read_memory_byte(pc);
-    encoded.flags = read_memory_byte(pc + 1);
-    encoded.operand1 = read_memory_word(pc + 2);
-    encoded.operand2 = read_memory_word(pc + 4);
-    encoded.operand3 = read_memory_word(pc + 6);
+
+    // Check each memory read for access violations
+    auto opcode_opt = read_memory_byte(pc);
+    if (!opcode_opt) {
+        // Memory access violation - log error and return null
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction opcode at PC 0x{:04X} in process \"{}\". Terminating process.", pc, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.opcode = opcode_opt.value();
+
+    auto flags_opt = read_memory_byte(pc + 1);
+    if (!flags_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction flags at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 1, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.flags = flags_opt.value();
+
+    auto operand1_opt = read_memory_word(pc + 2);
+    if (!operand1_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction operand1 at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 2, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.operand1 = operand1_opt.value();
+
+    auto operand2_opt = read_memory_word(pc + 4);
+    if (!operand2_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction operand2 at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 4, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.operand2 = operand2_opt.value();
+
+    auto operand3_opt = read_memory_word(pc + 6);
+    if (!operand3_opt) {
+        std::lock_guard lock(log_mutex);
+        std::string log_entry = std::format("[ERROR] Memory access violation while fetching instruction operand3 at PC 0x{:04X} in process \"{}\". Terminating process.", pc + 6, name);
+        print_logs.push_back(log_entry);
+        output_buffer.push_back(log_entry);
+        return nullptr;
+    }
+    encoded.operand3 = operand3_opt.value();
 
     return encoder->decode_instruction(encoded);
 }

@@ -297,8 +297,6 @@ std::optional<uint8_t> Memory::read_byte(uint16_t address) const
 
 std::optional<uint8_t> Memory::read_byte(uint32_t pid, uint32_t virtual_address)
 {
-    if (!is_valid_process_access(pid, virtual_address)) return std::nullopt;
-
     std::lock_guard lock(memory_mutex);
 
     const auto it = process_spaces.find(pid);
@@ -329,8 +327,6 @@ bool Memory::write_byte(uint16_t address, uint8_t value)
 
 bool Memory::write_byte(uint32_t pid, uint32_t virtual_address, uint8_t value)
 {
-    if (!is_valid_process_access(pid, virtual_address)) return false;
-
     std::lock_guard lock(memory_mutex);
 
     const auto it = process_spaces.find(pid);
@@ -379,8 +375,10 @@ std::optional<uint16_t> Memory::read_word(uint32_t pid, uint32_t virtual_address
 
 bool Memory::write_word(uint16_t address, uint16_t value)
 {
-    write_byte(address, value & 0xff);
-    write_byte(address + 1, (value >> 8) & 0xff);
+    const bool low_ok = write_byte(address, value & 0xff);
+    const bool high_ok = write_byte(address + 1, (value >> 8) & 0xff);
+
+    return low_ok && high_ok;
 }
 
 bool Memory::write_word(uint32_t pid, uint16_t virtual_address, uint16_t value)

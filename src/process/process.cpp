@@ -227,7 +227,6 @@ std::shared_ptr<IInstruction> Process::fetch_instruction()
         return nullptr;
     }
 
-    encoder->load_str_table(*this, str_table_base);
 
     EncodedInstruction encoded;
     encoded.opcode = read_memory_byte(pc);

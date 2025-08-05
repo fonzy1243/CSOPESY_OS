@@ -553,13 +553,12 @@ void ApheliOS::display_process_smi() {
         return;
     }
 
-    auto running_processes = scheduler->get_running();
-    auto finished_processes = scheduler->get_finished();
+    auto process_snapshots = scheduler->get_process_snapshots();
 
-    // Calculate CPU utilization
+    // Calculate CPU utilization from snapshots
     int cores_used = 0;
-    for (const auto& process : running_processes) {
-        if (process->get_state() == ProcessState::eRunning && process->get_assigned_core() != 9999) {
+    for (const auto& snapshot : process_snapshots) {
+        if (snapshot.state == ProcessState::eRunning && snapshot.assigned_core != 9999) {
             cores_used++;
         }
     }
@@ -572,7 +571,7 @@ void ApheliOS::display_process_smi() {
     size_t available_memory = memory->get_available_memory();
     float memory_util = (total_memory > 0) ? (static_cast<float>(allocated_memory) / total_memory) * 100.0f : 0.0f;
 
-     shell->output_buffer.emplace_back(" ");
+    shell->output_buffer.emplace_back(" ");
     shell->output_buffer.emplace_back("=================================================");
     shell->output_buffer.emplace_back("| PROCESS-SMI V01.00 DRIVER-VERSION 1.0         |");
     shell->output_buffer.emplace_back("=================================================\n");
@@ -586,16 +585,22 @@ void ApheliOS::display_process_smi() {
     shell->output_buffer.emplace_back("Running processes and memory usage:");
     shell->output_buffer.emplace_back("-------------------------------------------------");
 
-    if (running_processes.empty()) {
-        shell->output_buffer.emplace_back("No running processes");
-    } else {
-        for (const auto& process : running_processes) {
-            if (process->get_state() == ProcessState::eRunning) {
-                size_t process_memory = memory->get_process_memory_usage(process->id);
-                shell->output_buffer.emplace_back(std::format("{:<20} {:<10} (pages: {})",
-                    process->name, process_memory, memory->calculate_pages_needed(process_memory)));
-            }
+    // Filter for running processes and calculate memory for each
+    bool has_running_processes = false;
+    for (const auto& snapshot : process_snapshots) {
+        if (snapshot.state == ProcessState::eRunning && snapshot.assigned_core != 9999) {
+            has_running_processes = true;
+
+            size_t process_memory = memory->get_process_memory_usage(snapshot.id);
+            size_t process_pages = memory->calculate_pages_needed(process_memory);
+
+            shell->output_buffer.emplace_back(std::format("{:<20} {:<10}B (pages: {})",
+                snapshot.name, process_memory, process_pages));
         }
+    }
+
+    if (!has_running_processes) {
+        shell->output_buffer.emplace_back("No running processes");
     }
 
     shell->output_buffer.emplace_back("=================================================");

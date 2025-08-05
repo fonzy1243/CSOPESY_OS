@@ -244,6 +244,45 @@ std::vector<std::shared_ptr<Process>> Scheduler::get_running()
      return running_processes;
  }
 
+std::vector<ProcessSnapshot> Scheduler::get_process_snapshots()
+ {
+     std::vector<ProcessSnapshot> snapshots;
+
+     // Get snapshots of running processes
+     {
+         std::lock_guard lock(running_mutex);
+         for (const auto& process : running_processes) {
+             if (process) {
+                 ProcessSnapshot snapshot;
+                 snapshot.id = process->id;
+                 snapshot.name = process->name;
+                 snapshot.state = process->get_state();
+                 snapshot.assigned_core = process->get_assigned_core();
+                 snapshot.status_string = process->get_status_string();
+                 snapshots.push_back(snapshot);
+             }
+         }
+     }
+
+     {
+         std::lock_guard lock(finished_mutex);
+         for (const auto& process : finished_processes) {
+             if (process) {
+                 ProcessSnapshot snapshot;
+                 snapshot.id = process->id;
+                 snapshot.name = process->name;
+                 snapshot.state = process->get_state();
+                 snapshot.assigned_core = process->get_assigned_core();
+                 snapshot.status_string = process->get_status_string();
+                 snapshots.push_back(snapshot);
+             }
+         }
+     }
+
+     return snapshots;
+
+ }
+
 std::string Scheduler::get_status_string()
  {
      auto running = get_running();

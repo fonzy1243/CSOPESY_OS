@@ -228,7 +228,7 @@ std::shared_ptr<IInstruction> Process::fetch_instruction()
     }
 
 
-    EncodedInstruction encoded;
+    EncodedInstruction encoded{};
     encoded.opcode = read_memory_byte(pc);
     encoded.flags = read_memory_byte(pc + 1);
     encoded.operand1 = read_memory_word(pc + 2);

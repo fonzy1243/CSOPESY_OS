@@ -6,6 +6,10 @@
 #include "instruction.h"
 #include <fstream>
 #include "../cpu_tick.h"
+#include <limits>
+
+constexpr size_t INVALID_ADDRESS = 9999999;
+
 
 void PrintInstruction::execute(Process &process)
 {
@@ -14,6 +18,14 @@ void PrintInstruction::execute(Process &process)
     std::string final_message = message;
     if (has_variable) {
         size_t var_address = process.get_var_address(variable_name);
+        if (var_address == -1000) {
+            // Error: Could not get variable address (symbol table full)
+            std::string error_log = std::format("PRINT: Cannot access variable '{}' - symbol table full", variable_name);
+            std::lock_guard lock(process.log_mutex);
+            process.print_logs.push_back(error_log);
+            process.output_buffer.push_back("[ERROR] " + error_log);
+            return;
+        }
         uint16_t var_value = process.read_memory_word(var_address);
 
         final_message = message + " " + variable_name + " = " + std::to_string(var_value);
@@ -43,6 +55,24 @@ void DeclareInstruction::execute(Process &process)
     uint16_t core_id = process.assigned_core.load();
 
     size_t address = process.get_var_address(var_name);
+    if (address == INVALID_ADDRESS) {
+        // Error: Could not get variable address (symbol table full)
+        std::string error_log = std::format("DECLARE: Cannot declare variable '{}' - symbol table full (max 32 variables)", var_name);
+
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        std::tm tm{};
+        localtime_s(&tm, &time_t);
+
+        std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"{}\"",
+            tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+            core_id, error_log);
+
+        std::lock_guard lock(process.log_mutex);
+        process.print_logs.push_back(log_entry);
+        process.output_buffer.push_back("[ERROR] " + error_log);
+        return;
+    }
     process.write_memory_word(address, value);
 
     auto now = std::chrono::system_clock::now();
@@ -71,6 +101,23 @@ void AddInstruction::execute(Process &process)
 {
     uint16_t core_id = process.assigned_core.load();
     size_t var1_address = process.get_var_address(var1);
+    if (var1_address == INVALID_ADDRESS) {
+        std::string error_log = std::format("ADD: Cannot access variable '{}' - symbol table full (max 32 variables)", var1);
+
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        std::tm tm{};
+        localtime_s(&tm, &time_t);
+
+        std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"{}\"",
+            tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+            core_id, error_log);
+
+        std::lock_guard lock(process.log_mutex);
+        process.print_logs.push_back(log_entry);
+        process.output_buffer.push_back("[ERROR] " + error_log);
+        return;
+    }
 
     std::string val2_str, val3_str;
 
@@ -78,6 +125,23 @@ void AddInstruction::execute(Process &process)
         val2_str = std::to_string(val2);
     } else {
         const size_t var2_address = process.get_var_address(var2);
+        if (var2_address == INVALID_ADDRESS) {
+            std::string error_log = std::format("ADD: Cannot access variable '{}' - symbol table full (max 32 variables)", var2);
+
+            auto now = std::chrono::system_clock::now();
+            auto time_t = std::chrono::system_clock::to_time_t(now);
+            std::tm tm{};
+            localtime_s(&tm, &time_t);
+
+            std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"{}\"",
+                tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+                core_id, error_log);
+
+            std::lock_guard lock(process.log_mutex);
+            process.print_logs.push_back(log_entry);
+            process.output_buffer.push_back("[ERROR] " + error_log);
+            return;
+        }
         val2 = process.read_memory_word(var2_address);
         val2_str = std::format("{}({})", var2, val2);
     }
@@ -86,6 +150,23 @@ void AddInstruction::execute(Process &process)
         val3_str = std::to_string(val3);
     } else {
         const size_t var3_address = process.get_var_address(var3);
+        if (var3_address == INVALID_ADDRESS) {
+            std::string error_log = std::format("ADD: Cannot access variable '{}' - symbol table full (max 32 variables)", var3);
+
+            auto now = std::chrono::system_clock::now();
+            auto time_t = std::chrono::system_clock::to_time_t(now);
+            std::tm tm{};
+            localtime_s(&tm, &time_t);
+
+            std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"{}\"",
+                tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+                core_id, error_log);
+
+            std::lock_guard lock(process.log_mutex);
+            process.print_logs.push_back(log_entry);
+            process.output_buffer.push_back("[ERROR] " + error_log);
+            return;
+        }
         val3 = process.read_memory_word(var3_address);
         val3_str = std::format("{}({})", var3, val3);
     }
@@ -123,13 +204,46 @@ void SubtractInstruction::execute(Process &process)
 {
     uint16_t core_id = process.assigned_core.load();
     size_t var1_address = process.get_var_address(var1);
+    if (var1_address == INVALID_ADDRESS) {
+        std::string error_log = std::format("SUBTRACT: Cannot access variable '{}' - symbol table full (max 32 variables)", var1);
 
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        std::tm tm{};
+        localtime_s(&tm, &time_t);
+
+        std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"{}\"",
+            tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+            core_id, error_log);
+
+        std::lock_guard lock(process.log_mutex);
+        process.print_logs.push_back(log_entry);
+        process.output_buffer.push_back("[ERROR] " + error_log);
+        return;
+    }
     std::string val2_str, val3_str;
 
     if (use_val2) {
         val2_str = std::to_string(val2);
     } else {
         const size_t var2_address = process.get_var_address(var2);
+        if (var2_address == INVALID_ADDRESS) {
+            std::string error_log = std::format("SUBTRACT: Cannot access variable '{}' - symbol table full (max 32 variables)", var2);
+
+            auto now = std::chrono::system_clock::now();
+            auto time_t = std::chrono::system_clock::to_time_t(now);
+            std::tm tm{};
+            localtime_s(&tm, &time_t);
+
+            std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"{}\"",
+                tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+                core_id, error_log);
+
+            std::lock_guard lock(process.log_mutex);
+            process.print_logs.push_back(log_entry);
+            process.output_buffer.push_back("[ERROR] " + error_log);
+            return;
+        }
         val2 = process.read_memory_word(var2_address);
         val2_str = std::format("{}({})", var2, val2);
     }
@@ -138,6 +252,23 @@ void SubtractInstruction::execute(Process &process)
         val3_str = std::to_string(val3);
     } else {
         const size_t var3_address = process.get_var_address(var3);
+        if (var3_address == INVALID_ADDRESS) {
+            std::string error_log = std::format("SUBTRACT: Cannot access variable '{}' - symbol table full (max 32 variables)", var3);
+
+            auto now = std::chrono::system_clock::now();
+            auto time_t = std::chrono::system_clock::to_time_t(now);
+            std::tm tm{};
+            localtime_s(&tm, &time_t);
+
+            std::string log_entry = std::format("({:02d}/{:02d}/{:04d} {:02d}:{:02d}:{:02d}) Core: {} \"{}\"",
+                tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
+                core_id, error_log);
+
+            std::lock_guard lock(process.log_mutex);
+            process.print_logs.push_back(log_entry);
+            process.output_buffer.push_back("[ERROR] " + error_log);
+            return;
+        }
         val3 = process.read_memory_word(var3_address);
         val3_str = std::format("{}({})", var3, val3);
     }

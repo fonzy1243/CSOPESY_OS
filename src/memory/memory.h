@@ -186,6 +186,7 @@ public:
     size_t calculate_pages_needed(size_t memory_bytes) const;
 
     size_t get_process_memory_usage(uint16_t pid) const;
+    size_t get_process_backing_store_usage(uint16_t pid) const;
     uint32_t get_page_size() const { return page_size; }
 
     uint64_t get_pages_paged_in() const { return pages_paged_in.load(); }

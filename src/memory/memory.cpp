@@ -233,6 +233,19 @@ size_t Memory::get_process_memory_usage(uint16_t pid) const {
     return it->second->allocated_pages * page_size;
 }
 
+size_t Memory::get_process_backing_store_usage(uint16_t pid) const
+{
+    std::lock_guard lock(memory_mutex);
+
+    auto it = process_spaces.find(pid);
+    if (it == process_spaces.end()) {
+        return 0;
+    }
+
+    return it->second->page_to_backing_slot.size() * page_size;
+}
+
+
 bool Memory::create_process_space(uint32_t pid, size_t memory_bytes)
 {
     std::lock_guard lock(memory_mutex);

@@ -8,7 +8,7 @@
 #include "../cpu_tick.h"
 #include <limits>
 
-constexpr size_t INVALID_ADDRESS = 9999999;
+constexpr size_t INVALID_ADDRESS = 9999999999;
 
 
 void PrintInstruction::execute(Process &process)
@@ -30,6 +30,7 @@ void PrintInstruction::execute(Process &process)
         if (!var_res) {
             std::lock_guard lock(process.log_mutex);
             std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+            process.set_state(ProcessState::eFinished);
             process.print_logs.push_back(log_entry);
             process.output_buffer.push_back(log_entry);
             return;
@@ -99,6 +100,7 @@ void DeclareInstruction::execute(Process &process)
             core_id, var_name, value);
     } else {
         log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+        process.set_state(ProcessState::eFinished);
     }
 
     std::lock_guard lock(process.log_mutex);
@@ -162,6 +164,7 @@ void AddInstruction::execute(Process &process)
         if (!var2_read) {
             std::lock_guard lock(process.log_mutex);
             std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+            process.set_state(ProcessState::eFinished);
             process.print_logs.push_back(log_entry);
             process.output_buffer.push_back(log_entry);
             return;
@@ -195,6 +198,7 @@ void AddInstruction::execute(Process &process)
         if (!val3_read) {
             std::lock_guard lock(process.log_mutex);
             std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+            process.set_state(ProcessState::eFinished);
             process.print_logs.push_back(log_entry);
             process.output_buffer.push_back(log_entry);
             return;
@@ -223,6 +227,7 @@ void AddInstruction::execute(Process &process)
         core_id, var1, val2_str, val3_str, static_cast<uint16_t>(result));
     } else {
         log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+        process.set_state(ProcessState::eFinished);
     }
 
     std::lock_guard lock(process.log_mutex);
@@ -285,6 +290,7 @@ void SubtractInstruction::execute(Process &process)
         if (!val2_read) {
             std::lock_guard lock(process.log_mutex);
             std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+            process.set_state(ProcessState::eFinished);
             process.print_logs.push_back(log_entry);
             process.output_buffer.push_back(log_entry);
             return;
@@ -318,6 +324,7 @@ void SubtractInstruction::execute(Process &process)
         if (!val3_read) {
             std::lock_guard lock(process.log_mutex);
             std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+            process.set_state(ProcessState::eFinished);
             process.print_logs.push_back(log_entry);
             process.output_buffer.push_back(log_entry);
             return;
@@ -347,6 +354,7 @@ void SubtractInstruction::execute(Process &process)
          tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min, tm.tm_sec,
          core_id, var1, val2_str, val3_str, result);
     } else {
+        process.set_state(ProcessState::eFinished);
         log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
     }
 
@@ -415,6 +423,7 @@ void ReadInstruction::execute(Process &process)
     if (!val_read) {
         std::lock_guard lock(process.log_mutex);
         std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+        process.set_state(ProcessState::eFinished);
         process.print_logs.push_back(log_entry);
         process.output_buffer.push_back(log_entry);
         return;
@@ -457,6 +466,7 @@ std::string ReadInstruction::get_type_name() const
     if (!read_res) {
         std::lock_guard lock(process.log_mutex);
         std::string log_entry = std::format("[ERROR] Memory access violation found in process \"{}\". Terminating process.", process.name);
+        process.set_state(ProcessState::eFinished);
         process.print_logs.push_back(log_entry);
         process.output_buffer.push_back(log_entry);
         return;
